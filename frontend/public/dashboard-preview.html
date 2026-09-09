@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rolio Dashboard Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #000; color: #fff; }
+    
+    /* Navbar */
+    nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: rgba(0,0,0,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .nav-inner { max-width: 1280px; margin: 0 auto; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: rgba(255,255,255,0.4); }
+    .nav-links { display: flex; gap: 4px; }
+    .nav-links a { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 13px; color: rgba(255,255,255,0.5); text-decoration: none; transition: all 0.2s; }
+    .nav-links a:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.05); }
+    .nav-links a.active { color: #fff; background: rgba(255,255,255,0.1); }
+    .nav-right { display: flex; align-items: center; gap: 12px; }
+    .avatar { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+    
+    /* Main content */
+    .main { max-width: 1280px; margin: 0 auto; padding: 80px 24px 40px; }
+    .greeting h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
+    .greeting p { color: rgba(255,255,255,0.4); margin-top: 8px; font-size: 15px; }
+    
+    /* Stats */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 40px 0; }
+    .stat-card { background: #050505; border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 20px; transition: border-color 0.2s; cursor: pointer; }
+    .stat-card:hover { border-color: rgba(255,255,255,0.1); }
+    .stat-value { font-size: 30px; font-weight: 700; }
+    .stat-label { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 4px; }
+    
+    /* Grid layout */
+    .content-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+    .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+    .section-title a { font-size: 12px; color: rgba(255,255,255,0.3); text-decoration: none; }
+    
+    /* Job cards */
+    .job-card { background: #050505; border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; margin-bottom: 12px; transition: border-color 0.2s; cursor: pointer; }
+    .job-card:hover { border-color: rgba(255,255,255,0.1); }
+    .job-header { display: flex; align-items: center; gap: 12px; }
+    .job-logo { width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.3); overflow: hidden; }
+    .job-logo img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+    .job-info { flex: 1; }
+    .job-title { font-size: 14px; font-weight: 600; }
+    .job-company { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+    .job-meta { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+    .job-meta span { font-size: 12px; color: rgba(255,255,255,0.3); display: flex; align-items: center; gap: 4px; }
+    .job-skills { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+    .skill-tag { font-size: 11px; padding: 3px 8px; background: rgba(255,255,255,0.05); border-radius: 4px; color: rgba(255,255,255,0.5); }
+    .match-badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,0.1); color: #fff; white-space: nowrap; }
+    .match-badge.strong { background: rgba(255,255,255,0.15); }
+    
+    /* Sidebar */
+    .sidebar { display: flex; flex-direction: column; gap: 20px; }
+    .sidebar-card { background: #050505; border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 20px; }
+    .sidebar-card h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .progress-bar { width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+    .progress-fill { height: 100%; background: #fff; border-radius: 3px; transition: width 0.5s; }
+    .progress-value { font-size: 24px; font-weight: 700; }
+    .progress-label { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 2px; }
+    .view-link { font-size: 12px; color: rgba(255,255,255,0.3); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; }
+    .tip-item { display: flex; gap: 8px; margin-bottom: 10px; }
+    .tip-num { font-size: 11px; color: rgba(255,255,255,0.2); min-width: 12px; }
+    .tip-text { font-size: 12px; color: rgba(255,255,255,0.4); line-height: 1.5; }
+    .quick-link { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 6px; font-size: 13px; color: rgba(255,255,255,0.5); text-decoration: none; transition: all 0.2s; }
+    .quick-link:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.8); }
+    
+    @media (max-width: 768px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .content-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-inner">
+      <div class="logo">RO<span>LIO</span></div>
+      <div class="nav-links">
+        <a href="#" class="active">📊 Dashboard</a>
+        <a href="#">🔍 Jobs</a>
+        <a href="#">📄 Applications</a>
+        <a href="#">🔖 Saved</a>
+        <a href="#">👤 Profile</a>
+      </div>
+      <div class="nav-right">
+        <div class="avatar">A</div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="greeting">
+      <h1>Good evening, Alex</h1>
+      <p>You have 10 strong opportunities waiting.</p>
+    </div>
+
+    <div class="stats">
+      <a class="stat-card" href="#">
+        <div class="stat-value">10</div>
+        <div class="stat-label">Strong Matches</div>
+      </a>
+      <a class="stat-card" href="#">
+        <div class="stat-value">0</div>
+        <div class="stat-label">Applications</div>
+      </a>
+      <a class="stat-card" href="#">
+        <div class="stat-value">0</div>
+        <div class="stat-label">Interviews</div>
+      </a>
+      <div class="stat-card">
+        <div class="stat-value">86%</div>
+        <div class="stat-label">Profile Strength</div>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <div class="main-content">
+        <div class="section-title">
+          <span>Recommended for you</span>
+          <a href="#">View all →</a>
+        </div>
+
+        <!-- Job 1: Stripe -->
+        <div class="job-card">
+          <div class="job-header">
+            <div class="job-logo"><img src="https://logo.clearbit.com/stripe.com" alt="Stripe"></div>
+            <div class="job-info">
+              <div class="job-title">Junior Software Engineer</div>
+              <div class="job-company">Stripe</div>
+            </div>
+            <div class="match-badge strong">89% Match</div>
+          </div>
+          <div class="job-meta">
+            <span>📍 San Francisco, CA</span>
+            <span>🔄 Hybrid</span>
+            <span>💰 $110K – $160K</span>
+            <span>🕐 2 days ago</span>
+          </div>
+          <div class="job-skills">
+            <span class="skill-tag">Python</span>
+            <span class="skill-tag">JavaScript</span>
+            <span class="skill-tag">SQL</span>
+            <span class="skill-tag">Git</span>
+          </div>
+        </div>
+
+        <!-- Job 2: Google -->
+        <div class="job-card">
+          <div class="job-header">
+            <div class="job-logo"><img src="https://logo.clearbit.com/google.com" alt="Google"></div>
+            <div class="job-info">
+              <div class="job-title">Full Stack Developer</div>
+              <div class="job-company">Google</div>
+            </div>
+            <div class="match-badge strong">94% Match</div>
+          </div>
+          <div class="job-meta">
+            <span>📍 Mountain View, CA</span>
+            <span>🔄 Hybrid</span>
+            <span>💰 $140K – $200K</span>
+            <span>🕐 1 day ago</span>
+          </div>
+          <div class="job-skills">
+            <span class="skill-tag">Python</span>
+            <span class="skill-tag">React</span>
+            <span class="skill-tag">Node.js</span>
+            <span class="skill-tag">SQL</span>
+            <span class="skill-tag">REST APIs</span>
+          </div>
+        </div>
+
+        <!-- Job 3: Notion -->
+        <div class="job-card">
+          <div class="job-header">
+            <div class="job-logo"><img src="https://logo.clearbit.com/notion.so" alt="Notion"></div>
+            <div class="job-info">
+              <div class="job-title">Backend Engineer</div>
+              <div class="job-company">Notion</div>
+            </div>
+            <div class="match-badge">91% Match</div>
+          </div>
+          <div class="job-meta">
+            <span>📍 San Francisco, CA</span>
+            <span>🔄 Hybrid</span>
+            <span>💰 $130K – $185K</span>
+            <span>🕐 3 days ago</span>
+          </div>
+          <div class="job-skills">
+            <span class="skill-tag">Python</span>
+            <span class="skill-tag">FastAPI</span>
+            <span class="skill-tag">PostgreSQL</span>
+            <span class="skill-tag">TypeScript</span>
+          </div>
+        </div>
+
+        <!-- Job 4: Vercel -->
+        <div class="job-card">
+          <div class="job-header">
+            <div class="job-logo"><img src="https://logo.clearbit.com/vercel.com" alt="Vercel"></div>
+            <div class="job-info">
+              <div class="job-title">Frontend Engineer</div>
+              <div class="job-company">Vercel</div>
+            </div>
+            <div class="match-badge">85% Match</div>
+          </div>
+          <div class="job-meta">
+            <span>📍 Remote</span>
+            <span>🏠 Remote</span>
+            <span>💰 $120K – $170K</span>
+            <span>🕐 5 days ago</span>
+          </div>
+          <div class="job-skills">
+            <span class="skill-tag">React</span>
+            <span class="skill-tag">TypeScript</span>
+            <span class="skill-tag">Next.js</span>
+            <span class="skill-tag">CSS</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <!-- Profile Strength -->
+        <div class="sidebar-card">
+          <h3>Profile Strength</h3>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 86%"></div>
+          </div>
+          <div class="progress-value">86%</div>
+          <a href="#" class="view-link">View profile →</a>
+        </div>
+
+        <!-- Tips -->
+        <div class="sidebar-card">
+          <h3>⚡ Improve your profile</h3>
+          <div class="tip-item">
+            <span class="tip-num">1.</span>
+            <span class="tip-text">Add TypeScript to your skills if you have experience with it.</span>
+          </div>
+          <div class="tip-item">
+            <span class="tip-num">2.</span>
+            <span class="tip-text">Add more skills to improve your match rate.</span>
+          </div>
+          <div class="tip-item">
+            <span class="tip-num">3.</span>
+            <span class="tip-text">You have 10 strong matches waiting — apply today!</span>
+          </div>
+          <a href="#" class="view-link">Edit profile →</a>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="sidebar-card">
+          <h3>Quick actions</h3>
+          <a href="#" class="quick-link">🔍 Browse jobs</a>
+          <a href="#" class="quick-link">🔖 Saved jobs (0)</a>
+          <a href="#" class="quick-link">📄 My applications</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

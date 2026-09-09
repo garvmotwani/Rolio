@@ -1,0 +1,97 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: rolio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rolio
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rolio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for rate limiting and caching
+  redis:
+    image: redis:7-alpine
+    container_name: rolio-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rolio-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      # This compose file is a local demo stack over plain HTTP. Use a reverse
+      # proxy with HTTPS and set ROLIO_ENV=production for a real deployment.
+      - ROLIO_ENV=development
+      # FORCE_HTTPS defaults to true when ROLIO_ENV=production; set explicitly
+      # (with TRUSTED_PROXIES) once behind a TLS-terminating reverse proxy.
+      - FORCE_HTTPS=${FORCE_HTTPS:-false}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/rolio
+      - REDIS_URL=redis://redis:6379/0
+      - ROLIO_SECRET_KEY=${ROLIO_SECRET_KEY}
+      - CSRF_SECRET=${CSRF_SECRET}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8001/api/gmail/callback}
+      - NEMOTRON_API_KEY=${NEMOTRON_API_KEY}
+      - JSEARCH_API_KEY=${JSEARCH_API_KEY}
+      - FRONTEND_ORIGINS=http://localhost:3000,http://localhost
+      - BACKEND_PUBLIC_ORIGIN=http://localhost:8001
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8001"
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time (NEXT_PUBLIC_* semantics)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+    container_name: rolio-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+      # Enable (with a TLS proxy) to redirect http->https at the edge
+      - FORCE_HTTPS=${FORCE_HTTPS:-false}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:

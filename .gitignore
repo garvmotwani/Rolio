@@ -1,0 +1,59 @@
+# ─── Environment & Secrets ───────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+
+# ─── Tooling metadata ────────────────────────────────────────
+.freebuff/
+
+# ─── Databases ───────────────────────────────────────────────
+*.db
+*.db-journal
+*.sqlite3
+
+# ─── Uploads & Generated Files ───────────────────────────────
+backend/uploads/
+*.pdf
+*.docx
+*.doc
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# ─── Node.js / Frontend ─────────────────────────────────────
+node_modules/
+.next/
+out/
+.vercel/
+
+# ─── IDE / Editor ───────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Testing ─────────────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.nyc_output/
+
+# ─── Build Artifacts ────────────────────────────────────────
+*.tsbuildinfo

@@ -1,0 +1,140 @@
+'use client';
+
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, ExternalLink, Loader2, CheckCircle, ArrowRight } from 'lucide-react';
+import { useAuthStore } from '@/lib/store';
+import { apiPost } from '@/lib/api';
+import { useToast } from './Toast';
+
+interface ApplyModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  jobId: number | string;
+  jobTitle: string;
+  companyName: string;
+  applicationUrl?: string;
+  onApplied?: () => void;
+}
+
+
+export default function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyName, applicationUrl, onApplied }: ApplyModalProps) {
+  const [notes, setNotes] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isApplied, setIsApplied] = useState(false);
+  const user = useAuthStore(s => s.user);
+  const { addToast } = useToast();
+
+  const handleApply = async () => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      await apiPost('/api/applications', {
+        job_id: typeof jobId === 'string' ? parseInt(jobId.replace('jsearch_', ''), 36) || jobId : jobId,
+        notes: notes || undefined,
+        external_url: applicationUrl || undefined,
+      });
+      setIsApplied(true);
+      addToast(`Applied to ${jobTitle} at ${companyName}`, 'success');
+      setTimeout(() => { onApplied?.(); onClose(); setIsApplied(false); }, 1500);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to apply', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9990]"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md z-[9999]"
+            role="dialog"
+            aria-label={`Apply to ${jobTitle}`}
+          >
+            <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl shadow-2xl p-6">
+              {isApplied ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="text-center py-8"
+                >
+                  <CheckCircle size={48} className="text-white mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Application submitted!</h3>
+                  <p className="text-sm text-white/50">
+                    Applied to <strong className="text-white/80">{jobTitle}</strong> at <strong className="text-white/80">{companyName}</strong>
+                  </p>
+                </motion.div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-base font-semibold">Apply to job</h3>
+                      <p className="text-xs text-white/40 mt-0.5">{jobTitle} at {companyName}</p>
+                    </div>
+                    <button
+                      onClick={onClose}
+                      className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white/80 transition-colors"
+                      aria-label="Close"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[11px] text-white/40 uppercase tracking-wider block mb-1.5">
+                        Notes (optional)
+                      </label>
+                      <textarea
+                        value={notes}
+                        onChange={e => setNotes(e.target.value)}
+                        placeholder="Add notes about this application..."
+                        rows={3}
+                        className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-3.5 py-2.5 text-sm text-white/80 placeholder:text-white/20 outline-none focus:border-white/15 transition-colors resize-none"
+                      />
+                    </div>
+
+                    <div className="flex gap-3">
+                      {applicationUrl && (
+                        <a
+                          href={applicationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/5 text-sm text-white/60 hover:text-white/80 hover:bg-white/[0.08] transition-all"
+                        >
+                          <ExternalLink size={14} />
+                          Open job page
+                        </a>
+                      )}
+                      <button
+                        onClick={handleApply}
+                        disabled={isLoading}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-black text-sm font-medium hover:bg-white/90 disabled:opacity-50 transition-all"
+                      >
+                        {isLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
+                        {isLoading ? 'Applying...' : 'Mark as applied'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
