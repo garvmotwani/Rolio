@@ -25,6 +25,8 @@ def seed_database():
             hashed_password=get_password_hash("password"),
             is_active=True,
             is_onboarded=True,
+            # Demo account ships pre-verified so the portfolio demo isn't nagged
+            email_verified=True,
         )
         db.add(demo_user)
         db.flush()
@@ -67,6 +69,13 @@ def seed_database():
         db.commit()
         demo_user_is_new = True
         print("Seeded demo user with full profile (demo@rolio.com / password).")
+    else:
+        # Idempotent fix-up: demo users created before email verification
+        # existed stay unverified — the demo account should never nag.
+        demo = db.query(User).filter(User.email == "demo@rolio.com").first()
+        if demo and not demo.email_verified:
+            demo.email_verified = True
+            db.commit()
 
     # Check if already seeded
     if db.query(Company).count() > 0:

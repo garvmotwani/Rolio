@@ -41,6 +41,10 @@ class User(Base):
     # Google identity (OpenID Connect `sub` claim). Unique — one Google account
     # maps to at most one Rolio user. NULL for password-registered users.
     google_sub = Column(String, nullable=True, unique=True, index=True)
+    # Email verification: True for Google sign-in users (Google verifies the
+    # address) and for anyone who clicked a verification link. Password
+    # registrations start False.
+    email_verified = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True)
     is_onboarded = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

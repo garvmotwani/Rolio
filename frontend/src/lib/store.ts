@@ -16,6 +16,7 @@ interface User {
   email: string;
   name: string;
   is_onboarded: boolean;
+  email_verified?: boolean;
 }
 
 interface AuthState {

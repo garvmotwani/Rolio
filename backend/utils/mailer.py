@@ -1,13 +1,13 @@
 """
-Email sending — transactional mail for password resets.
+Email sending — transactional mail (password resets, email verification).
 
 Design:
 - Uses the Resend HTTP API (free tier) when RESEND_API_KEY is configured.
-- Without a key (local development / CI), the email is NOT sent: the reset
-  link is logged server-side instead, so the flow remains fully testable.
-- Never logs or returns anything sensitive beyond the reset URL itself in
-  server-side logs (the URL contains a single-use token that expires in
-  30 minutes; log access is required to read it).
+- Without a key (local development / CI), the email is NOT sent: the link is
+  logged server-side instead, so the flow remains fully testable.
+- Never logs or returns anything sensitive beyond the link itself in
+  server-side logs (each URL contains a single-use token with limited TTL;
+  log access is required to read it).
 """
 import logging
 
@@ -41,6 +41,61 @@ def _reset_email_html(name: str, reset_url: str) -> str:
   </body>
 </html>
 """
+
+
+def _verification_email_html(name: str, verify_url: str) -> str:
+    display_name = name or "there"
+    return f"""
+<html>
+  <body style="margin:0;background:#0a0a0a;padding:40px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <div style="max-width:480px;margin:0 auto;background:#111;border:1px solid #222;border-radius:16px;padding:40px;">
+      <p style="margin:0 0 24px;font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.02em;">RO<span style="color:#555;">LIO</span></p>
+      <h1 style="margin:0 0 12px;font-size:22px;color:#fff;letter-spacing:-0.02em;">Verify your email</h1>
+      <p style="margin:0 0 28px;font-size:14px;line-height:1.6;color:#999;">Hi {display_name}, welcome to Rolio. Confirm this email address to activate your account. This link is valid for <strong style="color:#ccc;">24 hours</strong> and can be used only once.</p>
+      <a href="{verify_url}" style="display:inline-block;background:#fff;color:#000;text-decoration:none;font-size:14px;font-weight:600;padding:14px 32px;border-radius:999px;">Verify email</a>
+      <p style="margin:28px 0 0;font-size:12px;line-height:1.6;color:#666;">If you didn't create a Rolio account, you can safely ignore this email.</p>
+    </div>
+  </body>
+</html>
+"""
+
+
+def send_verification_email(to_email: str, name: str, verify_url: str) -> bool:
+    """
+    Send the email verification email. Same contract as the reset email:
+    True when delivered, False when falling back to dev logging. Never raises.
+    """
+    if not RESEND_API_KEY:
+        logger.info(
+            "RESEND_API_KEY not configured — email verification link for %s: %s "
+            "(dev fallback: the email was not sent)",
+            to_email,
+            verify_url,
+        )
+        return False
+
+    try:
+        resp = httpx.post(
+            RESEND_API_URL,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": EMAIL_FROM,
+                "to": [to_email],
+                "subject": "Verify your Rolio email",
+                "html": _verification_email_html(name, verify_url),
+            },
+            timeout=SEND_TIMEOUT_SECONDS,
+        )
+        if resp.status_code in (200, 201):
+            return True
+        logger.warning("Resend verification send failed with status %s", resp.status_code)
+        return False
+    except Exception:
+        logger.exception("Resend verification send raised an exception")
+        return False
 
 
 def send_password_reset_email(to_email: str, name: str, reset_url: str) -> bool:

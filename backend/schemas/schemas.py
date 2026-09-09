@@ -32,6 +32,9 @@ class ResetPasswordRequest(BaseModel):
         from utils.auth import validate_password_strength
         validate_password_strength(self.password)
 
+class VerifyEmailRequest(BaseModel):
+    token: str
+
 class Token(BaseModel):
     """Response after login/register/refresh. No token in body — tokens are in HttpOnly cookies."""
     user: dict
@@ -41,6 +44,7 @@ class UserResponse(BaseModel):
     email: str
     name: str
     is_onboarded: bool
+    email_verified: bool = False
     created_at: datetime
     class Config:
         from_attributes = True

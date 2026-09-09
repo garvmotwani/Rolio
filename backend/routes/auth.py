@@ -22,9 +22,10 @@ from database.connection import get_db
 from models.models import User, Profile
 from models.session import RefreshSession, hash_token
 from models.password_reset import PasswordResetToken, hash_reset_token
+from models.email_verification import EmailVerificationToken, hash_verification_token
 from schemas.schemas import (
     UserRegister, UserLogin, Token, UserResponse,
-    ForgotPasswordRequest, ResetPasswordRequest,
+    ForgotPasswordRequest, ResetPasswordRequest, VerifyEmailRequest,
 )
 from utils.auth import (
     get_password_hash, verify_password, create_access_token,
@@ -35,7 +36,7 @@ from utils.auth import (
 )
 from utils.security_logging import log_auth_event, log_rate_limit_violation
 from utils.rate_limiter import get_rate_limiter
-from utils.mailer import send_password_reset_email
+from utils.mailer import send_password_reset_email, send_verification_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -63,6 +64,7 @@ def _user_response(user: User) -> dict:
         "email": user.email,
         "name": user.name,
         "is_onboarded": user.is_onboarded,
+        "email_verified": bool(getattr(user, "email_verified", False)),
     }
 
 
@@ -90,6 +92,7 @@ def register(data: UserRegister, request: Request, response: Response, db: Sessi
         email=data.email,
         hashed_password=get_password_hash(data.password),
         name=data.name,
+        email_verified=False,
     )
     db.add(user)
     db.commit()
@@ -98,6 +101,8 @@ def register(data: UserRegister, request: Request, response: Response, db: Sessi
     profile = Profile(user_id=user.id)
     db.add(profile)
     db.commit()
+
+    _issue_email_verification(db, user, client_ip)
 
     # Issue tokens and persist session
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -312,6 +317,108 @@ def reset_password(data: ResetPasswordRequest, request: Request, db: Session = D
         success=True, detail=f"revoked_{revoked}_sessions",
     )
     return {"message": "Password updated. You can now sign in with your new password."}
+
+
+# ─── Email Verification ──────────────────────────────────
+VERIFICATION_TOKEN_TTL_HOURS = 24
+
+
+def _issue_email_verification(db: Session, user: User, ip_address: str = "") -> bool:
+    """
+    Create and (attempt to) send a verification email for a user.
+    Invalidates all previously issued, still-unused tokens first — only the
+    newest link ever works. Returns True when the email was actually sent.
+    No-op for already-verified users or users without an email.
+    """
+    if getattr(user, "email_verified", False):
+        return False
+
+    db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == user.id,
+        EmailVerificationToken.used_at.is_(None),
+    ).update({"used_at": datetime.utcnow()})
+
+    raw_token = secrets.token_urlsafe(32)
+    record = EmailVerificationToken(
+        user_id=user.id,
+        token_hash=hash_verification_token(raw_token),
+        expires_at=datetime.utcnow() + timedelta(hours=VERIFICATION_TOKEN_TTL_HOURS),
+    )
+    db.add(record)
+    db.commit()
+
+    verify_url = f"{APP_PUBLIC_URL}/verify-email?token={raw_token}"
+    sent = send_verification_email(user.email, user.name, verify_url)
+    log_auth_event(
+        "email_verification_sent", user_id=user.id, ip_address=ip_address,
+        success=True, detail="email_sent" if sent else "dev_fallback_logged",
+    )
+    return sent
+
+
+@router.post("/send-verification")
+def send_verification(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    (Re)send the verification email for the logged-in user.
+
+    Always returns a generic 200 — identical body whether the user is already
+    verified, unknown, or a fresh email went out — so the endpoint cannot be
+    used to probe account state. Rate limited per-IP (email side effect).
+    """
+    client_ip = _get_client_ip(request)
+    if not _rate_limiter.check("send_verification", client_ip, 5, 3600):
+        log_rate_limit_violation(
+            endpoint="/api/auth/send-verification", ip_address=client_ip, limit=5, window=3600,
+        )
+        return {"message": "If your email is not yet verified, a verification link has been sent."}
+
+    if not getattr(user, "email_verified", False):
+        _issue_email_verification(db, user, client_ip)
+
+    return {"message": "If your email is not yet verified, a verification link has been sent."}
+
+
+@router.post("/verify-email")
+def verify_email(data: VerifyEmailRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Consume a verification token and mark the user's email verified.
+
+    Token must exist, be unused, and be unexpired (single-use). Generic error
+    message for unknown/used/expired tokens — no state hints. Success logs the
+    user out of the token-checking sense only; their session (if any) stays
+    valid since verification never changes credentials.
+    """
+    client_ip = _get_client_ip(request)
+    if not _rate_limiter.check("verify_email", client_ip, 20, 3600):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+
+    if not data.token or len(data.token) > 128:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link.")
+
+    token_hash = hash_verification_token(data.token)
+    record = db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.token_hash == token_hash,
+    ).first()
+
+    # Same generic error for unknown, used, and expired tokens
+    if not record or record.is_used or record.is_expired:
+        log_auth_event("email_verification_failed", ip_address=client_ip, success=False, detail="invalid_token")
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link.")
+
+    user = db.query(User).filter(User.id == record.user_id, User.is_active == True).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link.")
+
+    user.email_verified = True
+    record.used_at = datetime.utcnow()
+    db.commit()
+
+    log_auth_event("email_verification_completed", user_id=user.id, ip_address=client_ip, success=True)
+    return {"message": "Email verified successfully.", "email": user.email}
 
 
 # ─── Logout All Devices ──────────────────────────────────────

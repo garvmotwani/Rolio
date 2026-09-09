@@ -15,6 +15,7 @@ import TiltCard from '@/components/TiltCard';
 import AnimatedCounter from '@/components/AnimatedCounter';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import FloatingOrbs from '@/components/FloatingOrbs';
+import VerifyEmailBanner from '@/components/VerifyEmailBanner';
 import CompanyLogo from '@/components/CompanyLogo';
 import ApplicationFunnel, { WeeklyActivity, ResponseRateRing } from '@/components/ApplicationFunnel';
 import AnimatedBeam from '@/components/AnimatedBeam';
@@ -148,6 +149,13 @@ export default function DashboardPage() {
     <div className="max-w-6xl mx-auto px-6 py-10 relative">
       <FloatingOrbs count={2} className="opacity-20" />
       <motion.div variants={container} initial="hidden" animate="show" className="relative z-10">
+        {/* Email verification nudge (unverified accounts only) */}
+        {user.email_verified === false && (
+          <motion.div variants={item}>
+            <VerifyEmailBanner email={user.email} />
+          </motion.div>
+        )}
+
         {/* Header with parallax depth */}
         <ParallaxSection speed={0.08} className="mb-10">
           <motion.div variants={item}>

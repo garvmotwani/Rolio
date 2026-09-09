@@ -222,9 +222,12 @@ def google_signin_callback(
         user = db.query(User).filter(User.email == email).first()
         if user:
             user.google_sub = google_sub
+            # Google has verified this address — honour that on link too
+            user.email_verified = True
             log_auth_event("google_link", user_id=user.id, email=email, ip_address=_client_ip(request))
         else:
-            user = User(email=email, name=name, google_sub=google_sub, hashed_password=None)
+            # Google verified the email — the account starts fully verified
+            user = User(email=email, name=name, google_sub=google_sub, hashed_password=None, email_verified=True)
             db.add(user)
             db.flush()  # get user.id before creating profile
             db.add(Profile(user_id=user.id))
