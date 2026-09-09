@@ -147,6 +147,15 @@ function LoginForm() {
             </motion.p>
           )}
 
+          <motion.div variants={formItem} className="flex justify-end -mt-2">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-white/30 hover:text-white/60 transition-colors"
+            >
+              Forgot password?
+            </Link>
+          </motion.div>
+
           <motion.div variants={formItem}>
             <MagneticButton type="submit" disabled={isLoading || googleLoading} className="btn-premium btn-glow w-full bg-white text-black py-3.5 rounded-full font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
               {isLoading ? <Loader2 size={16} className="animate-spin" /> : null}

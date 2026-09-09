@@ -21,6 +21,17 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+    def model_post_init(self, __context):
+        from utils.auth import validate_password_strength
+        validate_password_strength(self.password)
+
 class Token(BaseModel):
     """Response after login/register/refresh. No token in body — tokens are in HttpOnly cookies."""
     user: dict

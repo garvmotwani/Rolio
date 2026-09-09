@@ -21,6 +21,7 @@ from models.email_models import (
 )
 from models.session import RefreshSession
 from models.oauth_state import OAuthState
+from models.password_reset import PasswordResetToken
 
 # Alembic Config object
 config = context.config

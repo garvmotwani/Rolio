@@ -131,11 +131,15 @@ NEMOTRON_NANO_MODEL = os.getenv("NEMOTRON_NANO_MODEL", "nvidia/nemotron-3-nano-3
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 AI_API_KEY = os.getenv("AI_API_KEY", "")
-AI_MODEL = os.getenv("AI_MODEL", "gpt-3.5-turbo")
-
-# ─── Job Search ──────────────────────────────────────────────
+AI_MODEL = os.getenv("AI_MODEL", "gpt-3.5-turbo")# ─── Job Search ────────────────────────────────────────────── 
 JSEARCH_API_KEY = os.getenv("JSEARCH_API_KEY", "")
 JOB_API_KEY = os.getenv("JOB_API_KEY", "")
+
+# ─── Email (transactional) ───────────────────────────────────
+# Resend (resend.com) free tier — used for password reset emails.
+# Without a key, reset links are logged server-side instead (dev fallback).
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "Rolio <onboarding@resend.dev>")
 
 # ─── Uploads ─────────────────────────────────────────────────
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"))

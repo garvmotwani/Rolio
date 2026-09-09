@@ -9,23 +9,33 @@ Security measures:
 - Generic error messages to prevent account enumeration.
 - CSRF protection on all state-changing endpoints including refresh.
 """
+from datetime import datetime, timedelta
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from config import RATE_LIMIT_LOGIN_PER_MINUTE, RATE_LIMIT_REGISTER_PER_MINUTE
+from config import (
+    RATE_LIMIT_LOGIN_PER_MINUTE, RATE_LIMIT_REGISTER_PER_MINUTE, APP_PUBLIC_URL,
+)
 from database.connection import get_db
 from models.models import User, Profile
 from models.session import RefreshSession, hash_token
-from schemas.schemas import UserRegister, UserLogin, Token, UserResponse
+from models.password_reset import PasswordResetToken, hash_reset_token
+from schemas.schemas import (
+    UserRegister, UserLogin, Token, UserResponse,
+    ForgotPasswordRequest, ResetPasswordRequest,
+)
 from utils.auth import (
     get_password_hash, verify_password, create_access_token,
     create_refresh_token, set_auth_cookies, clear_auth_cookies,
     validate_password_strength, get_current_user,
     _verify_csrf, create_refresh_session, validate_refresh_session,
-    revoke_refresh_session,
+    revoke_refresh_session, revoke_all_user_sessions,
 )
 from utils.security_logging import log_auth_event, log_rate_limit_violation
 from utils.rate_limiter import get_rate_limiter
+from utils.mailer import send_password_reset_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -198,6 +208,110 @@ def logout(request: Request, response: Response, user: User = Depends(get_curren
     log_auth_event("logout", user_id=user.id)
     clear_auth_cookies(response)
     return {"message": "Logged out successfully"}
+
+
+# ─── Forgot Password ─────────────────────────────────────────
+RESET_TOKEN_TTL_MINUTES = 30
+
+
+@router.post("/forgot-password")
+def forgot_password(
+    data: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Request a password reset link.
+
+    Always returns a generic 200 response — the response is identical whether
+    or not the email exists, preventing account enumeration. Rate limited
+    aggressively since each hit can trigger an outbound email.
+    """
+    client_ip = _get_client_ip(request)
+    # Tight per-IP limit: email sending is a valuable side effect to abuse
+    if not _rate_limiter.check("forgot_password", client_ip, 5, 3600):
+        log_rate_limit_violation(
+            endpoint="/api/auth/forgot-password", ip_address=client_ip, limit=5, window=3600,
+        )
+        # Identical body to the success case — no information leak
+        return {"message": "If an account with that email exists, a reset link has been sent."}
+
+    user = db.query(User).filter(User.email == data.email).first()
+    if user:
+        # Invalidate all previously issued, still-unused tokens for this user:
+        # only the newest link ever works.
+        db.query(PasswordResetToken).filter(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+        ).update({"used_at": datetime.utcnow()})
+
+        raw_token = secrets.token_urlsafe(32)
+        record = PasswordResetToken(
+            user_id=user.id,
+            token_hash=hash_reset_token(raw_token),
+            expires_at=datetime.utcnow() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
+            request_ip=(client_ip or "unknown")[:45],
+        )
+        db.add(record)
+        db.commit()
+
+        reset_url = f"{APP_PUBLIC_URL}/reset-password?token={raw_token}"
+        sent = send_password_reset_email(user.email, user.name, reset_url)
+        log_auth_event(
+            "password_reset_requested", user_id=user.id, ip_address=client_ip,
+            success=True, detail="email_sent" if sent else "dev_fallback_logged",
+        )
+
+    # Identical response in every branch
+    return {"message": "If an account with that email exists, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Consume a reset token and set a new password.
+
+    - Token must exist, be unused, and be unexpired (single-use).
+    - On success, revokes every active login session for the user.
+    - Generic error messages — no hints about token state beyond what is
+      necessary for UX (invalid/expired share one message).
+    """
+    client_ip = _get_client_ip(request)
+    if not _rate_limiter.check("reset_password", client_ip, 10, 3600):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+
+    if not data.token or len(data.token) > 128:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+
+    token_hash = hash_reset_token(data.token)
+    record = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == token_hash,
+    ).first()
+
+    # Same generic error for unknown, used, and expired tokens
+    if not record or record.is_used or record.is_expired:
+        log_auth_event(
+            "password_reset_failed", ip_address=client_ip, success=False,
+            detail="invalid_token",
+        )
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+
+    user = db.query(User).filter(User.id == record.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+
+    user.hashed_password = get_password_hash(data.password)
+    record.used_at = datetime.utcnow()
+
+    # Security: a completed reset kills every active session everywhere
+    revoked = revoke_all_user_sessions(db, user.id)
+    db.commit()
+
+    log_auth_event(
+        "password_reset_completed", user_id=user.id, ip_address=client_ip,
+        success=True, detail=f"revoked_{revoked}_sessions",
+    )
+    return {"message": "Password updated. You can now sign in with your new password."}
 
 
 # ─── Logout All Devices ──────────────────────────────────────
