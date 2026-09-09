@@ -9,13 +9,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText, ExternalLink, Trash2, Edit3, X, Check, ArrowRight,
   Mail, Clock, Calendar, Bell, MessageSquare, ChevronDown, ChevronUp,
-  ArrowUpRight, User, Send, Inbox, Plus, Sparkles, Download
+  ArrowUpRight, User, Send, Inbox, Plus, Sparkles, Download,
+  LayoutGrid, List
 } from 'lucide-react';
 import FloatingOrbs from '@/components/FloatingOrbs';
 import CompanyLogo from '@/components/CompanyLogo';
 import TiltCard from '@/components/TiltCard';
 import AnimatedStatusPill from '@/components/AnimatedStatusPill';
 import ParallaxSection from '@/components/ParallaxSection';
+import KanbanBoard from '@/components/KanbanBoard';
 
 interface Application {
   id: number;
@@ -94,6 +96,7 @@ export default function ApplicationsPage() {
   const [reminderDate, setReminderDate] = useState('');
   const [addReminderId, setAddReminderId] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
 
   useEffect(() => {
     if (!hydrated) return;
@@ -146,20 +149,19 @@ export default function ApplicationsPage() {
   const handleStatusChange = async (id: number, newStatus: string) => {
     try {
       await apiPut(`/api/applications/${id}`, { status: newStatus });
-      // Create event
       await apiPost(`/api/gmail/applications/${id}/events`, {
         event_type: 'status_change',
         title: 'Status changed manually',
         new_value: newStatus,
       });
       setEditingId(null);
-      loadApplications();
-      // Refresh events
-      setEvents(prev => {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
-      });
+      // Optimistic local update for kanban responsiveness
+      setApplications((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a))
+      );
+      // Refresh full list from server in background
+      apiGet<Application[]>(`/api/applications?status=${filter}`).then(setApplications).catch(() => {});
+      setEvents((prev) => { const c = { ...prev }; delete c[id]; return c; });
       loadEvents(id);
     } catch (err) { console.error(err); }
   };
@@ -254,6 +256,27 @@ export default function ApplicationsPage() {
                 </p>
               </div>
             <div className="flex items-center gap-3">
+              {/* View toggle */}
+              <div className="flex items-center bg-white/[0.04] border border-white/[0.06] rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('kanban')}
+                  className={`p-1.5 rounded-md transition-all ${
+                    viewMode === 'kanban' ? 'bg-white/10 text-white/70' : 'text-white/20 hover:text-white/40'
+                  }`}
+                  title="Kanban view"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-1.5 rounded-md transition-all ${
+                    viewMode === 'list' ? 'bg-white/10 text-white/70' : 'text-white/20 hover:text-white/40'
+                  }`}
+                  title="List view"
+                >
+                  <List size={14} />
+                </button>
+              </div>
               <button
                 onClick={async () => {
                   setExporting(true);
@@ -313,6 +336,16 @@ export default function ApplicationsPage() {
           })}
         </div>
 
+        {/* ─── Kanban View ─── */}
+        {hasApps && viewMode === 'kanban' && (
+          <div className="mt-2">
+            <KanbanBoard
+              applications={applications}
+              onStatusChange={handleStatusChange}
+            />
+          </div>
+        )}
+
         {!hasApps ? (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-24">
             <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center mx-auto mb-5">
@@ -326,7 +359,7 @@ export default function ApplicationsPage() {
               Browse jobs <ArrowRight size={14} />
             </Link>
           </motion.div>
-        ) : (
+        ) : viewMode === 'list' ? (
           /* ─── Application Cards with Timeline ─── */
           <div className="space-y-3">
             <AnimatePresence>
@@ -592,7 +625,7 @@ export default function ApplicationsPage() {
               })}
             </AnimatePresence>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
