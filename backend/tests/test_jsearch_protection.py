@@ -28,10 +28,17 @@ class TestJSearchInputBounds:
         assert resp.status_code == 422
 
     def test_post_accepts_valid_date_posted(self, test_client):
-        resp = test_client.post(
-            "/api/jsearch/search",
-            json={"query": "developer", "date_posted": "week"},
-        )
+        # Hermetic: never call the real RapidAPI even when a key is configured.
+        with patch(
+            "routes.jsearch.search_jobs",
+            new=AsyncMock(return_value={"data": [], "count": 0, "page": 1,
+                                        "num_pages": 1, "query": "dev",
+                                        "source": "fallback"}),
+        ):
+            resp = test_client.post(
+                "/api/jsearch/search",
+                json={"query": "developer", "date_posted": "week"},
+            )
         # 200 (results or unavailable) but never 422
         assert resp.status_code == 200
 
@@ -43,10 +50,17 @@ class TestJSearchInputBounds:
         assert resp.status_code == 422
 
     def test_post_accepts_internship_alias(self, test_client):
-        resp = test_client.post(
-            "/api/jsearch/search",
-            json={"query": "developer", "employment_type": "INTERNSHIP"},
-        )
+        # Hermetic: never call the real RapidAPI even when a key is configured.
+        with patch(
+            "routes.jsearch.search_jobs",
+            new=AsyncMock(return_value={"data": [], "count": 0, "page": 1,
+                                        "num_pages": 1, "query": "dev",
+                                        "source": "fallback"}),
+        ):
+            resp = test_client.post(
+                "/api/jsearch/search",
+                json={"query": "developer", "employment_type": "INTERNSHIP"},
+            )
         assert resp.status_code == 200
 
     def test_get_rejects_overlong_query(self, test_client):
@@ -68,6 +82,10 @@ class TestJSearchInputBounds:
 
 class TestJSearchMissingKey:
     """Test graceful behavior when JSEARCH_API_KEY is not configured."""
+
+    # Note: JSEARCH_CONFIGURED is patched explicitly in every test in this
+    # class so results are identical whether or not the local environment
+    # happens to have a real JSEARCH_API_KEY set (CI has none).
 
     def test_unavailable_response_when_no_key(self, test_client):
         with patch("routes.jsearch.JSEARCH_CONFIGURED", False):
@@ -117,7 +135,9 @@ class TestJSearchRateLimiting:
     def test_anonymous_quota_eventually_blocks(self, test_client):
         from routes.jsearch import ANON_SEARCH_LIMIT_PER_HOUR
 
-        with patch(
+        # Patch the service configured-flag so the quota check is reached
+        # even in environments without a real JSEARCH_API_KEY (e.g. CI).
+        with patch("routes.jsearch.JSEARCH_CONFIGURED", True), patch(
             "routes.jsearch.search_jobs",
             new=AsyncMock(return_value={"data": [], "count": 0, "page": 1,
                                         "num_pages": 1, "query": "dev",
