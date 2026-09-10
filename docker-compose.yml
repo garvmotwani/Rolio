@@ -60,6 +60,8 @@ services:
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8001/api/gmail/callback}
       - NEMOTRON_API_KEY=${NEMOTRON_API_KEY}
       - JSEARCH_API_KEY=${JSEARCH_API_KEY}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-Rolio <onboarding@resend.dev>}
       - FRONTEND_ORIGINS=http://localhost:3000,http://localhost
       - BACKEND_PUBLIC_ORIGIN=http://localhost:8001
     volumes:
