@@ -7,7 +7,7 @@ import { useAuthStore, apiGet, apiPost, apiFetch } from '@/lib/store';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText, Download, Sparkles, ArrowLeft, Loader2, Briefcase,
-  GraduationCap, Code, Target, RefreshCw, Copy, Check, ChevronDown
+  GraduationCap, Code, Target, RefreshCw, Copy, Check, ChevronDown, Printer
 } from 'lucide-react';
 import FloatingOrbs from '@/components/FloatingOrbs';
 import TiltCard from '@/components/TiltCard';
@@ -73,6 +73,60 @@ export default function ResumeBuilderPage() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const downloadPDF = () => {
+    if (!resume) return;
+    const name = user?.name || 'Resume';
+    const contact = [
+      resume.contact?.location || (user as any)?.location,
+      (user as any)?.email,
+      resume.contact?.phone,
+    ].filter(Boolean).join('  ·  ');
+
+    const experienceHTML = (resume.experience || []).map(e => `
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div><strong style="font-size:14px">${e.title}</strong> <span style="color:#666;font-size:13px">— ${e.company}</span></div>
+          ${(e.start || e.end) ? `<span style="font-size:11px;color:#999">${[e.start, e.end].filter(Boolean).join(' – ')}</span>` : ''}
+        </div>
+        <ul style="margin:6px 0 0 18px;padding:0">${e.bullets.map(b => `<li style="font-size:12px;color:#444;margin-bottom:3px;line-height:1.5">${b}</li>`).join('')}</ul>
+      </div>`).join('');
+
+    const educationHTML = (resume.education || []).map(e => `
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <div><strong style="font-size:13px">${e.degree}</strong>${e.field ? ` <span style="color:#666">in ${e.field}</span>` : ''} <span style="color:#999;font-size:12px">— ${e.institution}</span></div>
+        ${e.year ? `<span style="font-size:11px;color:#bbb">${e.year}</span>` : ''}
+      </div>`).join('');
+
+    const skillsHTML = (resume.skills || []).map(s =>
+      `<span style="display:inline-block;padding:2px 8px;margin:2px;border:1px solid #ddd;border-radius:4px;font-size:11px;color:#333">${s}</span>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${name} - Resume</title>
+      <style>
+        @page { margin: 0.6in; size: letter; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Georgia', 'Times New Roman', serif; color: #222; line-height: 1.5; }
+        h1 { font-size: 22px; text-align: center; margin-bottom: 2px; letter-spacing: 1px; }
+        .contact { text-align: center; font-size: 11px; color: #666; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
+        h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #888; border-bottom: 1px solid #eee; padding-bottom: 4px; margin: 18px 0 10px; }
+        p.summary { font-size: 12px; color: #444; line-height: 1.6; }
+      </style></head><body>
+      <h1>${name.toUpperCase()}</h1>
+      <div class="contact">${contact}</div>
+      ${resume.summary ? `<h2>Professional Summary</h2><p class="summary">${resume.summary}</p>` : ''}
+      ${resume.experience?.length ? `<h2>Experience</h2>${experienceHTML}` : ''}
+      ${resume.education?.length ? `<h2>Education</h2>${educationHTML}` : ''}
+      ${resume.skills?.length ? `<h2>Skills</h2><div>${skillsHTML}</div>` : ''}
+    </body></html>`;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(() => { printWindow.print(); }, 300);
+    }
   };
 
   const formatResumeText = (r: ResumeData): string => {
@@ -207,6 +261,13 @@ export default function ResumeBuilderPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-2"
               >
+                <button
+                  onClick={downloadPDF}
+                  className="w-full px-4 py-2.5 rounded-xl text-xs text-white/50 hover:text-white/70 border border-white/[0.08] hover:border-white/[0.15] flex items-center justify-center gap-2 transition-all bg-white/[0.03]"
+                >
+                  <Printer size={14} />
+                  Download PDF
+                </button>
                 <button
                   onClick={copyToClipboard}
                   className="w-full px-4 py-2.5 rounded-xl text-xs text-white/40 hover:text-white/60 border border-white/[0.06] hover:border-white/[0.12] flex items-center justify-center gap-2 transition-all"

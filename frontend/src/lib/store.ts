@@ -9,7 +9,7 @@
  * - The CSRF token is read from the rolio_csrf cookie (not HttpOnly).
  */
 import { create } from 'zustand';
-import { API_URL, apiFetch, apiPost } from './api';
+import { API_URL, apiFetch, apiPost, teardownSessionRefresh } from './api';
 
 interface User {
   id: number;
@@ -50,6 +50,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     // Call backend to clear server-side session + cookies
     apiPost('/api/auth/logout').catch(() => {});
+    teardownSessionRefresh();
     set({ user: null });
   },
 
