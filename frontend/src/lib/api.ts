@@ -17,7 +17,7 @@
  * entirely in HttpOnly cookies; only the non-HttpOnly CSRF cookie is read.
  */
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001').trim();
 
 // ─── CSRF ────────────────────────────────────────────────────
 
