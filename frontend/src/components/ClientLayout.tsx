@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense, lazy } from 'react';
 import { useAuthStore } from '@/lib/store';
 import { usePathname } from 'next/navigation';
 import Navbar from './Navbar';
 import Footer from './Footer';
 import CustomCursor from './CustomCursor';
 import PageTransition from './PageTransition';
-import AIChat from './AIChat';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import ScrollToTop from './ScrollToTop';
 import ScrollProgress from './ScrollProgress';
 import { ToastProvider } from './Toast';
+
+const AIChat = lazy(() => import('./AIChat'));
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const { loadFromStorage } = useAuthStore();
@@ -35,7 +36,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         </PageTransition>
         <Footer />
       </main>
-      <AIChat />
+      <Suspense fallback={null}>
+        <AIChat />
+      </Suspense>
       <ScrollToTop />
     </ToastProvider>
   );
