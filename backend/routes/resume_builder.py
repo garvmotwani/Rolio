@@ -11,6 +11,7 @@ import json
 from database.connection import get_db
 from models.models import User, Profile, Skill, Experience, Education
 from utils.auth import get_current_user
+from utils.ai_rate_limit import ai_rate_limit
 from services.ai_provider import call_ai, build_resume_prompt, build_section_prompt
 
 router = APIRouter(prefix="/api/resume-builder", tags=["resume-builder"])
@@ -47,7 +48,7 @@ def _profile_to_dict(profile, skills, experiences, educations, user):
 
 
 @router.post("/generate")
-async def generate_resume(data: ResumeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def generate_resume(data: ResumeRequest, user: User = Depends(ai_rate_limit), db: Session = Depends(get_db)):
     """Generate complete resume — Nemotron, ~800 tokens total."""
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     if not profile:
@@ -133,7 +134,7 @@ def _normalize_resume(resume: dict, profile_data: dict) -> dict:
 
 
 @router.post("/section")
-async def generate_section(data: ResumeSectionRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def generate_section(data: ResumeSectionRequest, user: User = Depends(ai_rate_limit), db: Session = Depends(get_db)):
     """Generate single section — saves ~600 tokens vs full resume."""
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     if not profile:
@@ -183,7 +184,7 @@ async def generate_section(data: ResumeSectionRequest, user: User = Depends(get_
 
 
 @router.post("/improve")
-async def improve_text(text: str, context: str = "resume bullet point", user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def improve_text(text: str, context: str = "resume bullet point", user: User = Depends(ai_rate_limit), db: Session = Depends(get_db)):
     """Improve one bullet — ~60 tokens per call."""
     prompt = (
         f"Improve this {context} to be ATS-friendly:\n"

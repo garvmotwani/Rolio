@@ -14,6 +14,7 @@ from typing import Optional
 from database.connection import get_db
 from models.models import User, Profile, Skill, Job, Company, Experience
 from utils.auth import get_current_user
+from utils.ai_rate_limit import ai_rate_limit
 
 router = APIRouter(prefix="/api/cover-letter", tags=["cover-letter"])
 
@@ -60,7 +61,7 @@ TONE_INSTRUCTIONS = {
 @router.post("/generate")
 async def generate_cover_letter(
     data: CoverLetterRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     """Generate a tailored cover letter for a specific job."""
@@ -117,7 +118,7 @@ async def generate_cover_letter(
 @router.post("/generate/stream")
 async def generate_cover_letter_stream(
     data: CoverLetterRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     """Streaming cover letter generation — yields tokens via NDJSON."""

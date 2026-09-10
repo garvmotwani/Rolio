@@ -18,6 +18,8 @@ Security design:
 - The browser is redirected to a clean frontend URL — no tokens in URLs.
   Onboarding intent is passed via the path (/onboarding vs /dashboard).
 """
+import base64
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta
@@ -39,6 +41,7 @@ from utils.auth import (
 from config import IS_PRODUCTION
 from utils.security_logging import log_auth_event
 from utils.rate_limiter import get_rate_limiter
+from utils.client_ip import get_client_ip
 
 logger = logging.getLogger("rolio.google_auth")
 
@@ -55,10 +58,8 @@ STATE_COOKIE_MAX_AGE = 600
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """Trusted-proxy-aware client IP (shared helper — see utils/client_ip.py)."""
+    return get_client_ip(request)
 
 
 @router.get("/auth-url")
@@ -80,6 +81,13 @@ def get_google_auth_url(request: Request, db: Session = Depends(get_db)):
     session_id = secrets.token_urlsafe(32)
     state_token = secrets.token_urlsafe(32)
 
+    # PKCE (S256) — proof key for code exchange. The verifier is stored in the
+    # DB-persisted state record; only the derived challenge goes to Google.
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).decode().rstrip("=")
+
     oauth_state = OAuthState(
         user_id=None,  # sign-in flow: no user yet
         session_id=session_id,
@@ -97,9 +105,16 @@ def get_google_auth_url(request: Request, db: Session = Depends(get_db)):
         f"&response_type=code"
         f"&scope={'openid email profile'.replace(' ', '%20')}"
         f"&state={state_token}"
+        f"&code_challenge={code_challenge}"
+        f"&code_challenge_method=S256"
         f"&prompt=select_account"
     )
     auth_url = AUTH_URI + params
+
+    # Persist the verifier on the state row (DB is server-side only; the
+    # browser never sees it). Callback sends it with the token exchange.
+    oauth_state.code_verifier = code_verifier
+    db.commit()
 
     from fastapi.responses import JSONResponse
     response = JSONResponse(content={"auth_url": auth_url})
@@ -168,15 +183,19 @@ def google_signin_callback(
     try:
         import httpx
         redirect_uri = f"{_backend_origin(request)}/api/auth/google/callback"
+        token_data = {
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        }
+        # PKCE: replay the stored verifier in the exchange (RFC 7636)
+        if oauth_state.code_verifier:
+            token_data["code_verifier"] = oauth_state.code_verifier
         token_resp = httpx.post(
             TOKEN_URI,
-            data={
-                "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri": redirect_uri,
-                "grant_type": "authorization_code",
-            },
+            data=token_data,
             timeout=10.0,
         )
         if token_resp.status_code != 200:

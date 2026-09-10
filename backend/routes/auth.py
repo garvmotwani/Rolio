@@ -36,20 +36,14 @@ from utils.auth import (
 )
 from utils.security_logging import log_auth_event, log_rate_limit_violation
 from utils.rate_limiter import get_rate_limiter
+from utils.client_ip import get_client_ip as _get_client_ip
 from utils.mailer import send_password_reset_email, send_verification_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # Rate limiter instance (Redis-backed with in-memory fallback)
 _rate_limiter = get_rate_limiter()
-
-
-def _get_client_ip(request: Request) -> str:
-    """Get client IP for rate limiting, respecting X-Forwarded-For."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+# Client IP extraction is shared and trusted-proxy-aware (see utils/client_ip.py)
 
 
 def _get_user_agent(request: Request) -> str:

@@ -5,6 +5,7 @@ from database.connection import get_db
 from models.models import User, Profile, Job, Skill
 from schemas.schemas import AIMatchRequest, AICareerAdviceRequest
 from utils.auth import get_current_user
+from utils.ai_rate_limit import ai_rate_limit
 from services.matching_service import get_match_breakdown
 from services.ai_service import (
     generate_match_explanation,
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 @router.post("/match")
 async def explain_match(
     data: AIMatchRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
@@ -36,7 +37,7 @@ async def explain_match(
 @router.post("/explain-job")
 async def explain_job(
     data: AIMatchRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
@@ -54,7 +55,7 @@ async def explain_job(
 @router.post("/career-advice")
 async def career_advice(
     data: AICareerAdviceRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
@@ -68,7 +69,7 @@ async def career_advice(
 @router.post("/application-advice")
 async def application_advice(
     data: AIMatchRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()

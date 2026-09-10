@@ -29,6 +29,9 @@ class OAuthState(Base):
     session_id = Column(String(64), nullable=True, index=True)
     # "gmail" (connect flow) or "google_signin" (authentication flow)
     flow_type = Column(String(32), default="gmail")
+    # PKCE code_verifier for the sign-in flow (RFC 7636). Server-side only —
+    # never sent to the browser; only the S256 challenge goes to Google.
+    code_verifier = Column(String(128), nullable=True)
 
     __table_args__ = (
         Index("idx_oauth_state_lookup", "state_token", "is_consumed"),

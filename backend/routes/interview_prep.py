@@ -14,6 +14,7 @@ from typing import Optional, List
 from database.connection import get_db
 from models.models import User, Profile, Skill, Job, Company
 from utils.auth import get_current_user
+from utils.ai_rate_limit import ai_rate_limit
 
 logger = logging.getLogger("rolio.prep")
 
@@ -41,7 +42,7 @@ def _build_prep_context(job, company, profile, skills):
 @router.post("/generate")
 async def generate_flashcards(
     data: PrepRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     """Generate interview flashcards for a specific job."""
@@ -102,7 +103,7 @@ async def generate_flashcards(
 @router.post("/generate/stream")
 async def generate_flashcards_stream(
     data: PrepRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     """Streaming interview prep — yields cards as JSON lines as they're generated."""

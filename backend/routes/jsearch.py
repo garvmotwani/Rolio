@@ -21,6 +21,7 @@ from database.connection import get_db
 from models.models import User, Profile
 from utils.auth import get_optional_user
 from utils.rate_limiter import get_rate_limiter
+from utils.client_ip import get_client_ip
 from services.jsearch_service import (
     search_jobs, get_job_details, search_company_jobs, get_similar_jobs,
     get_search_summary, JSEARCH_CONFIGURED,
@@ -48,14 +49,6 @@ VALID_DATE_POSTED = {"today", "3days", "week", "month"}
 VALID_EMPLOYMENT_TYPES = {"FULLTIME", "PARTTIME", "CONTRACTOR", "INTERN", "INTERNSHIP"}
 
 
-def _client_ip(request: Request) -> str:
-    """Best-effort client IP for anonymous rate limiting."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 def _check_search_quota(user: Optional[User], request: Request, *, detail: bool = False) -> None:
     """Enforce per-user (auth) or per-IP (anonymous) quota. Raises 429."""
     if user:
@@ -68,7 +61,7 @@ def _check_search_quota(user: Optional[User], request: Request, *, detail: bool 
     else:
         allowed = _rate_limiter.check(
             "jsearch_detail" if detail else "jsearch_search",
-            f"ip:{_client_ip(request)}",
+            f"ip:{get_client_ip(request)}",
             ANON_DETAIL_LIMIT_PER_HOUR if detail else ANON_SEARCH_LIMIT_PER_HOUR,
             3600,
         )

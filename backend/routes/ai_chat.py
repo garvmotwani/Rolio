@@ -10,6 +10,7 @@ from datetime import datetime
 from database.connection import get_db
 from models.models import User, Profile, Skill, Application, Job, Company
 from utils.auth import get_current_user
+from utils.ai_rate_limit import ai_rate_limit
 from services.matching_service import get_match_breakdown
 
 router = APIRouter(prefix="/api/ai", tags=["ai-chat"])
@@ -129,7 +130,7 @@ def _build_user_prompt(message, history):
 @router.post("/chat")
 async def chat(
     data: ChatRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
@@ -200,7 +201,7 @@ async def chat(
 @router.post("/job-question/stream")
 async def job_question_stream(
     data: JobQuestionRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     """Streaming answers for the job-detail AI assistant buttons.
@@ -299,7 +300,7 @@ def _rule_based_job_answer(question, job, company, breakdown, profile_skills) ->
 @router.post("/chat/stream")
 async def chat_stream(
     data: ChatRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(ai_rate_limit),
     db: Session = Depends(get_db),
 ):
     """Streaming AI chat — returns NDJSON lines (one per token chunk)."""
