@@ -244,7 +244,7 @@ cd frontend && npm audit --omit=dev               # npm
 
 Full-stack AI career platform (Next.js 14, TypeScript, FastAPI, SQLAlchemy) featuring cookie-based JWT auth with rotating refresh sessions and CSRF protection, resume parsing with weighted job-matching, streaming AI assistance, Gmail OAuth with Fernet-encrypted tokens and replay-resistant server-side state, rate-limited external job search integration, Alembic-managed schema, and a 76-test security-focused pytest suite.
 
-> Résumé wording: *"Built a full-stack AI career platform using Next.js, TypeScript, FastAPI, SQLAlchemy, cookie-based authentication, resume parsing, job matching, application tracking, Gmail OAuth, AI career assistance, and real-time job search."*
+> Resume wording: *"Built a full-stack AI career platform using Next.js, TypeScript, FastAPI, SQLAlchemy, cookie-based authentication, resume parsing, job matching, application tracking, Gmail OAuth, AI career assistance, and real-time job search."*
 
 ## License
 
