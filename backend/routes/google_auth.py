@@ -30,7 +30,10 @@ from sqlalchemy.orm import Session
 from google.oauth2 import id_token
 from google.auth.transport.requests import Request as GoogleAuthRequest
 
-from config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_PUBLIC_URL, BACKEND_PUBLIC_ORIGIN
+from config import (
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_PUBLIC_URL, BACKEND_PUBLIC_ORIGIN,
+    GOOGLE_SIGNIN_REDIRECT_URI,
+)
 from database.connection import get_db
 from models.models import User, Profile
 from models.oauth_state import OAuthState
@@ -101,7 +104,7 @@ def get_google_auth_url(request: Request, db: Session = Depends(get_db)):
 
     params = (
         f"?client_id={GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={BACKEND_PUBLIC_ORIGIN}/api/auth/google/callback"
+        f"&redirect_uri={GOOGLE_SIGNIN_REDIRECT_URI}"
         f"&response_type=code"
         f"&scope={'openid email profile'.replace(' ', '%20')}"
         f"&state={state_token}"

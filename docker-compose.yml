@@ -80,14 +80,19 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Baked into the client bundle at build time (NEXT_PUBLIC_* semantics)
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+        # Browser calls the frontend origin itself (same-origin proxy); this
+        # stays empty unless you deliberately expose the backend directly.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        # Baked into next.config.mjs rewrites at build time.
+        BACKEND_ORIGIN: http://backend:8001
     container_name: rolio-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+      # Server-side rewrite target — the backend service on the Docker network.
+      - BACKEND_ORIGIN=http://backend:8001
       # Enable (with a TLS proxy) to redirect http->https at the edge
       - FORCE_HTTPS=${FORCE_HTTPS:-false}
     depends_on:

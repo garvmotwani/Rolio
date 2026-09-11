@@ -31,6 +31,10 @@ const securityHeaders = [
   },
 ];
 
+const BACKEND_ORIGIN = (
+  process.env.BACKEND_ORIGIN || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
+).trim();
+
 const nextConfig = {
   // Required by the production Docker image, which runs the standalone server.
   output: 'standalone',
@@ -42,6 +46,18 @@ const nextConfig = {
   poweredByHeader: false,
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
+  },
+  async rewrites() {
+    return [
+      // Same-origin API proxy: browser -> Next.js -> FastAPI. Auth cookies are
+      // first-party on the frontend origin, which makes cookie auth work on
+      // split-domain deployments (e.g. Vercel frontend + Render backend)
+      // without third-party cookie issues.
+      {
+        source: '/api/:path*',
+        destination: `${BACKEND_ORIGIN}/api/:path*`,
+      },
+    ];
   },
 };
 

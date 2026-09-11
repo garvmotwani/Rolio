@@ -10,6 +10,47 @@ from models.models import (
 from utils.auth import get_password_hash
 
 
+def _seed_demo_applications(db, demo_user: User):
+    """Give the demo account a realistic application pipeline so the kanban
+    board and analytics have data on a fresh database. Idempotent: only runs
+    when the demo user has no applications yet and jobs exist."""
+    if db.query(Application).filter(Application.user_id == demo_user.id).count() > 0:
+        return
+    jobs = db.query(Job).order_by(Job.id).limit(8).all()
+    if not jobs:
+        return
+
+    # One application per pipeline stage (spread across the 5 stages),
+    # with a couple of extras for a fuller board.
+    plan = [
+        ("applied", 0, 6),
+        ("applied", 1, 4),
+        ("screening", 2, 9),
+        ("interview", 3, 14),
+        ("offer", 4, 21),
+        ("rejected", 5, 18),
+        ("applied", 6, 2),
+        ("screening", 7, 7),
+    ]
+    now = datetime.utcnow()
+    for status, job_idx, days_ago in plan:
+        if job_idx >= len(jobs):
+            continue
+        job = jobs[job_idx]
+        applied_at = now - timedelta(days=days_ago)
+        db.add(Application(
+            user_id=demo_user.id,
+            job_id=job.id,
+            status=status,
+            notes="Demo application — seeded for showcase." if status != "applied" else "",
+            applied_at=applied_at,
+            interview_date=(now + timedelta(days=3) if status == "interview" else None),
+            match_score=random.randint(62, 92),
+        ))
+    db.commit()
+    print("Seeded demo application pipeline (kanban showcase).")
+
+
 def seed_database():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
@@ -79,6 +120,11 @@ def seed_database():
 
     # Check if already seeded
     if db.query(Company).count() > 0:
+        # Jobs already exist — make sure the demo pipeline does too (covers
+        # databases seeded before the kanban showcase existed).
+        demo_user = db.query(User).filter(User.email == "demo@rolio.com").first()
+        if demo_user:
+            _seed_demo_applications(db, demo_user)
         if not demo_user_is_new:
             print("Database already seeded.")
         db.close()
@@ -659,6 +705,11 @@ def seed_database():
 
     db.commit()
     print(f"Seeded {len(companies)} companies and {len(jobs)} jobs.")
+
+    demo_user = db.query(User).filter(User.email == "demo@rolio.com").first()
+    if demo_user:
+        _seed_demo_applications(db, demo_user)
+
     db.close()
 
 

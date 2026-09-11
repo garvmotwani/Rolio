@@ -119,10 +119,18 @@ FRONTEND_ORIGINS = [
 BACKEND_PUBLIC_ORIGIN = os.getenv("BACKEND_PUBLIC_ORIGIN", "http://localhost:8001")
 APP_PUBLIC_URL = os.getenv("APP_PUBLIC_URL", "http://localhost:3000")
 
-# ─── Google OAuth ────────────────────────────────────────────
+# ─── Google OAuth ───────────────────────────────────────────
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_PUBLIC_ORIGIN}/api/gmail/callback")
+
+# Redirect URI for "Sign in with Google". Defaults to the backend origin;
+# set to the FRONTEND origin's /api/auth/google/callback when the frontend
+# proxies /api/* to the backend (same-origin cookies, recommended for
+# split-domain deployments).
+GOOGLE_SIGNIN_REDIRECT_URI = os.getenv(
+    "GOOGLE_SIGNIN_REDIRECT_URI", f"{BACKEND_PUBLIC_ORIGIN}/api/auth/google/callback"
+)
 
 # ─── AI Services ─────────────────────────────────────────────
 NEMOTRON_API_KEY = os.getenv("NEMOTRON_API_KEY", "")

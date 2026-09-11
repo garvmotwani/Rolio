@@ -2,7 +2,9 @@
  * Rolio frontend API client — single shared module for all backend requests.
  *
  * Every helper:
- * - uses NEXT_PUBLIC_API_URL (falls back to localhost:8001 for local dev),
+ * - uses the shared API base: same-origin by default (Next.js rewrites proxy
+ *   /api/* to the FastAPI backend, keeping auth cookies first-party), or an
+ *   explicit NEXT_PUBLIC_API_URL when set,
  * - sends cookies (`credentials: 'include'`) for HttpOnly cookie auth,
  * - attaches the X-CSRF-Token header on state-changing requests,
  * - surfaces backend error details consistently.
@@ -17,7 +19,7 @@
  * entirely in HttpOnly cookies; only the non-HttpOnly CSRF cookie is read.
  */
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001').trim();
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/$/, '');
 
 // ─── CSRF ────────────────────────────────────────────────────
 
