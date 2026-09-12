@@ -6,7 +6,7 @@ plus managed **PostgreSQL** and **Redis**. This guide uses free tiers end to end
 ## Architecture
 
 ```
-Browser ──> Frontend (Vercel)  ──/api/* proxy──>  Backend (Render)  ──>  Postgres (Neon/Supabase)
+Browser ──> Frontend (Vercel)  ──/api/* proxy──>  Backend (Vercel fn)  ──>  Postgres (Neon)
                                                                    ──>  Redis (Upstash)
 ```
 
