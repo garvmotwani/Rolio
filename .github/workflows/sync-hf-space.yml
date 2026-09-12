@@ -1,0 +1,31 @@
+name: Sync backend to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**"]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push backend tree to the Space (force, fresh commit each time)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # The Space repo is the backend/ subtree; ship its tree as a fresh
+          # root commit so HF history stays linear regardless of main's.
+          TREE=$(git rev-parse HEAD:backend)
+          COMMIT=$(GIT_AUTHOR_NAME="github-actions[bot]" \
+                   GIT_AUTHOR_EMAIL="github-actions[bot]@users.noreply.github.com" \
+                   GIT_COMMITTER_NAME="github-actions[bot]" \
+                   GIT_COMMITTER_EMAIL="github-actions[bot]@users.noreply.github.com" \
+                   git commit-tree "$TREE" -m "Sync backend from GitHub ($GITHUB_SHA)")
+          git push --force \
+            "https://garvmotwani:${HF_TOKEN}@huggingface.co/spaces/garvmotwani/rolio-api" \
+            "${COMMIT}:refs/heads/main"
