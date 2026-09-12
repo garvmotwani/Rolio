@@ -31,6 +31,13 @@ the frontend directly at the backend origin.
    `postgresql+psycopg2://user:pass@host/db` (or `postgresql://` — both work).
 3. Note it as `DATABASE_URL`.
 
+> **Using Neon? Skip their CLI onboarding** (`neon login`, `neon skills`,
+> `neon.ts`, `neon deploy`). Those steps configure Neon's platform extras —
+> Neon Auth and storage buckets — which Rolio does not use: the app has its
+> own cookie sessions and Google sign-in, and only needs plain Postgres.
+> Just open Dashboard → **Connect** on the right branch and copy the
+> **pooled** connection string (hostname contains `-pooler`) as `DATABASE_URL`.
+
 ## Step 2 — Backend (Render)
 
 1. **New Web Service** → connect your GitHub repo.
