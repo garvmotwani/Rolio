@@ -25,7 +25,7 @@ os.environ.setdefault("UPLOAD_DIR", "/tmp/rolio-uploads")
 
 try:
     from main import app  # noqa: E402
-except Exception:
+except BaseException:  # SystemExit from config fail-fast must be caught too
     # Log the real traceback (shows up in Vercel → Logs) and return a short
     # diagnostic so an owner hitting the URL sees WHY boot failed. Never
     # include env values here — only the exception type and message.
