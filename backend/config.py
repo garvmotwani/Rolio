@@ -5,6 +5,7 @@ All secrets and environment-specific values are loaded from environment variable
 In production, required settings are validated at startup — the app refuses to start
 if critical secrets are missing or use insecure defaults.
 """
+from __future__ import annotations  # 3.9-compatible `X | None` annotations (Vercel runtime may default to 3.9)
 import os
 import sys
 import secrets

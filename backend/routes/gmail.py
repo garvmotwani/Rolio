@@ -10,6 +10,7 @@ Security measures:
 - Rate limiting on sync operations.
 - Disconnect revokes tokens and cleans up data.
 """
+from __future__ import annotations  # 3.9-compatible `X | None` annotations (Vercel runtime may default to 3.9)
 import os
 import json
 import base64
