@@ -48,17 +48,23 @@ the frontend directly at the backend origin.
 
 ## Step 3 — Frontend (Vercel)
 
-1. **Add New Project** → import the repo.
-2. Settings:
-   - **Root directory:** `frontend`
-   - Framework preset: Next.js (zero config otherwise)
-3. Environment variables:
-   - `NEXT_PUBLIC_API_URL` — **leave unset.** The default (empty) makes the
-     browser call `/api/...` same-origin, which the rewrite proxies to the
-     backend. This is what makes cookies work.
-   - `BACKEND_ORIGIN` = your Render backend URL, e.g. `https://rolio-api.onrender.com`
-     (used server-side by the rewrite; never exposed to the browser).
-4. Deploy.
+1. Go to [vercel.com](https://vercel.com) → **Sign up with GitHub** (Hobby plan is free, no credit card).
+2. Dashboard → **Add New… → Project** → find `garvmotwani/Rolio` → **Import**.
+3. On the configure screen:
+   - **Root Directory:** click `Edit` → select `frontend` (the repo root is the monorepo, Vercel must build only the frontend folder).
+   - Framework preset auto-detects **Next.js** — leave everything else at defaults (build command `next build`, output auto).
+4. Open **Environment Variables** and add exactly one:
+   - Name: `BACKEND_ORIGIN`
+   - Value: your backend URL **with** `https://`, **no** trailing slash — e.g. `https://rolio-api.onrender.com`
+   - Environments: check Production, Preview, and Development.
+   - Do **NOT** set `NEXT_PUBLIC_API_URL` — leaving it unset activates the same-origin proxy that makes auth cookies work.
+5. Click **Deploy**. First build takes ~2–3 minutes; you'll get a `*.vercel.app` URL.
+6. Every push to `main` auto-deploys; pull requests get preview URLs automatically.
+
+> Deploying before the backend is live is fine — the build succeeds either way.
+> The site will only fully work once `BACKEND_ORIGIN` points at a running
+> backend. If you set it later, just trigger a redeploy (Deployments → ⋯ →
+> Redeploy) so the rewrite picks it up.
 
 ## Step 4 — Google OAuth redirect URIs
 
@@ -113,12 +119,14 @@ Then set on the backend:
 ## Post-deploy verification
 
 1. `curl https://<backend-domain>/api/health` → `{"status":"ok",...}`
-2. Open the app, register an account — cookies should be set on the frontend
+2. `curl https://<frontend-domain>/api/health` → same JSON. This proves the
+   Vercel → Render proxy rewrite works (the browser never needs the backend URL).
+3. Open the app, register an account — cookies should be set on the frontend
    domain (DevTools → Application → Cookies).
-3. Log out / log back in; refresh the page while signed in (session survives).
-4. Google sign-in and Gmail connect (if configured) complete without
+4. Log out / log back in; refresh the page while signed in (session survives).
+5. Google sign-in and Gmail connect (if configured) complete without
    `?...=error` redirects.
-5. Password-reset email links open the correct frontend domain.
+6. Password-reset email links open the correct frontend domain.
 
 ## Updating
 
