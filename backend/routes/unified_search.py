@@ -290,7 +290,7 @@ async def _free_boards_search(
     if page > 1:
         return [], 0
     try:
-        raw = await search_free_boards(q, limit_per_source=6)
+        raw = await search_free_boards(q, limit_per_source=15)
     except Exception:
         return [], 0
 
