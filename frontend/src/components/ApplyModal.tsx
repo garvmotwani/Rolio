@@ -30,7 +30,9 @@ export default function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyNa
     setIsLoading(true);
     try {
       await apiPost('/api/applications', {
-        job_id: typeof jobId === 'string' ? parseInt(jobId.replace('jsearch_', ''), 36) || jobId : jobId,
+        // Local jobs pass numeric ids; external jobs pass prefixed string ids
+        // (jsearch_/remotive_/jobicy_) — the backend imports them to the DB.
+        job_id: jobId,
         notes: notes || undefined,
         external_url: applicationUrl || undefined,
       });

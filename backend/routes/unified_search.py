@@ -22,6 +22,7 @@ from utils.auth import get_optional_user, get_current_user
 from utils.rate_limiter import get_rate_limiter
 from services.matching_service import calculate_match_score
 from services.jsearch_service import search_jobs as jsearch_search, get_search_summary, JSEARCH_CONFIGURED
+from services.free_job_boards import search_free_boards, normalize_for_unified
 
 router = APIRouter(prefix="/api/search", tags=["unified-search"])
 
@@ -236,6 +237,48 @@ async def _jsearch_search(
     return results, total
 
 
+async def _free_boards_search(
+    q: str, page: int,
+) -> tuple[list[dict], int]:
+    """Query free boards (Remotive + Jobicy) as a third results leg.
+
+    These boards are remote-only, so they only meaningfully contribute when
+    the query fits (any query — they're keyword-searched) — always included
+    but ranked after local/JSearch via the sort below. Page 1 only: the
+    boards don't paginate, deeper pages would just repeat page-1 results.
+    """
+    if page > 1:
+        return [], 0
+    try:
+        raw = await search_free_boards(q, limit_per_source=6)
+    except Exception:
+        return [], 0
+
+    # Relevance post-filter: the boards' search APIs are fuzzy (Jobicy matches
+    # tags/geo loosely), so require at least one meaningful query term in the
+    # title or skills. Keeps "intern" searches free of "International Tax" noise.
+    import re as _re
+    stop = {"and", "the", "for", "with", "job", "jobs"}
+    terms = [t for t in q.lower().split() if len(t) >= 3 and t not in stop]
+    if not terms:
+        terms = [w for w in q.lower().split() if len(w) >= 3]
+    intern_mode = any(t.startswith("intern") for t in q.lower().split())
+    # "intern" must be a whole word (or internship/interns) — "international"
+    # also contains the substring and would otherwise pollute results.
+    intern_re = _re.compile(r"\bintern(ship|s)?\b")
+    filtered = []
+    for j in raw:
+        hay = (j.get("title", "") + " " + " ".join(j.get("skills", []))).lower()
+        if intern_mode:
+            if intern_re.search(hay):
+                filtered.append(j)
+            continue
+        if terms and any(t in hay for t in terms):
+            filtered.append(j)
+
+    return [normalize_for_unified(j) for j in filtered], len(filtered)
+
+
 @router.get("")
 async def unified_search(
     request: Request,
@@ -283,23 +326,35 @@ async def unified_search(
                         date_posted, page, user_id, profile, db)
     ) if (source in ("all", "jsearch") and q) else None
 
-    # Await both in parallel
-    if jsearch_task:
-        local_results, total_local = await local_task
-        jsearch_results, total_jsearch = await jsearch_task
-    else:
-        local_results, total_local = await local_task
-        jsearch_results, total_jsearch = [], 0
+    free_task = asyncio.create_task(
+        _free_boards_search(q, page)
+    ) if (source == "all" and q) else None
+
+    # Await all legs in parallel
+    local_results, total_local = await local_task
+    jsearch_results, total_jsearch = await jsearch_task if jsearch_task else ([], 0)
+    free_results, total_free = await free_task if free_task else ([], 0)
 
     # ─── Merge and sort ────────────────────────────────────
-    all_results = local_results + jsearch_results
+    # Dedupe external results by (title-lower, company-lower) — the boards and
+    # JSearch both draw from overlapping aggregator pools.
+    seen = set()
+    deduped_external = []
+    for j in jsearch_results + free_results:
+        key = (j.get("title", "").lower().strip(), j.get("company_name", "").lower().strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_external.append(j)
+
+    all_results = local_results + deduped_external
 
     if profile:
         all_results.sort(key=lambda x: x.get("match_score", 0), reverse=True)
     else:
         all_results.sort(key=lambda x: x.get("posted_at", ""), reverse=True)
 
-    total = total_local + total_jsearch
+    total = total_local + len(deduped_external)
 
     return {
         "jobs": all_results,
@@ -310,7 +365,11 @@ async def unified_search(
         "per_page": per_page,
         "source": source,
         "query": q,
-        "summary": f"Found {total_local} local + {total_jsearch} real-time jobs" if q else f"{total_local} jobs in database",
+        "total_free": total_free,
+        "summary": (
+            f"Found {total_local} local + {total_jsearch} real-time + {total_free} remote-board jobs"
+            if q else f"{total_local} jobs in database"
+        ),
     }
 
 

@@ -192,6 +192,9 @@ class Job(Base):
     employment_type = Column(String, default="full-time")
     application_url = Column(String, default="")
     source = Column(String, default="internal")
+    # Stable identifier from the external source (JSearch job_id, Remotive id,
+    # Jobicy id). Null for local/seeded jobs. Enables idempotent imports.
+    external_id = Column(String(512), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     posted_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

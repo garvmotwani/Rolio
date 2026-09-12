@@ -54,12 +54,24 @@ def get_applications(
     return results
 
 
+EXTERNAL_JOB_PREFIXES = ("jsearch_", "remotive_", "jobicy_")
+
+
 @router.post("/applications")
-def create_application(
+async def create_application(
     data: ApplicationCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # ── External job: import to DB first (idempotent) ─────
+    job_id = data.job_id
+    if isinstance(job_id, str) and job_id.startswith(EXTERNAL_JOB_PREFIXES):
+        from routes.jobs import _import_external_job
+        job_row = await _import_external_job(job_id, db)
+        if not job_row:
+            raise HTTPException(status_code=404, detail="Job not found")
+        data = data.model_copy(update={"job_id": job_row.id})
+
     job = db.query(Job).filter(Job.id == data.job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

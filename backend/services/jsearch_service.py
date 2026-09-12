@@ -149,35 +149,51 @@ async def search_jobs(
 
     try:
         import httpx
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{JSEARCH_BASE_URL}/search-v2",
-                headers={
-                    "X-RapidAPI-Key": JSEARCH_API_KEY,
-                    "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
-                },
-                params=params,
-                timeout=15.0,
-            )
+        last_error: Optional[Exception] = None
+        for attempt in range(2):  # one retry — upstream is intermittently slow
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        f"{JSEARCH_BASE_URL}/search-v2",
+                        headers={
+                            "X-RapidAPI-Key": JSEARCH_API_KEY,
+                            "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+                        },
+                        params=params,
+                        timeout=15.0,
+                    )
 
-            if resp.status_code == 200:
-                raw = resp.json()
-                result = _normalize_search_results(raw, query)
-                _search_cache[cache_key] = (time.time(), result)
+                if resp.status_code == 200:
+                    raw = resp.json()
+                    result = _normalize_search_results(raw, query)
+                    _search_cache[cache_key] = (time.time(), result)
 
-                # Persist to Redis for 24h — avoids future paid API calls for same query
-                if _redis:
-                    try:
-                        _redis.setex(f"jsr:{cache_key}", _JSEARCH_REDIS_TTL, json.dumps(result))
-                        logger.info("JSearch cache SET (Redis): %s — %d results", query[:50], result.get("count", 0))
-                    except Exception as e:
-                        logger.warning("JSearch Redis write failed: %s", str(e)[:100])
+                    # Persist to Redis for 24h — avoids future paid API calls for same query
+                    if _redis:
+                        try:
+                            _redis.setex(f"jsr:{cache_key}", _JSEARCH_REDIS_TTL, json.dumps(result))
+                            logger.info("JSearch cache SET (Redis): %s — %d results", query[:50], result.get("count", 0))
+                        except Exception as e:
+                            logger.warning("JSearch Redis write failed: %s", str(e)[:100])
 
-                return result
-            else:
-                logger.warning("JSearch API error %d for query '%s'", resp.status_code, query[:50])
+                    return result
+                else:
+                    # 4xx won't improve on retry — bail immediately
+                    logger.warning("JSearch API error %d for query '%s'", resp.status_code, query[:50])
+                    break
+            except Exception as e:
+                # httpx timeout errors stringify to "" — always log the type name
+                last_error = e
+                logger.warning("JSearch attempt %d failed: %s: %s",
+                               attempt + 1, type(e).__name__, str(e)[:200])
+                if attempt == 0:
+                    import asyncio as _asyncio
+                    await _asyncio.sleep(0.8)
+        if last_error:
+            logger.error("JSearch request failed after retry: %s: %s",
+                         type(last_error).__name__, str(last_error)[:200])
     except Exception as e:
-        logger.error("JSearch request failed: %s", str(e)[:200])
+        logger.error("JSearch request failed: %s: %s", type(e).__name__, str(e)[:200])
 
     return _get_fallback_jobs(query, page)
 

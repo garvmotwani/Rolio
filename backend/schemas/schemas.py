@@ -243,7 +243,9 @@ class JobSearchRequest(BaseModel):
 
 # Application schemas
 class ApplicationCreate(BaseModel):
-    job_id: int
+    # int for local DB jobs; str (jsearch_/remotive_/jobicy_ prefixed) for
+    # external jobs — the route imports those into the DB before applying.
+    job_id: int | str
     notes: str = ""
     external_url: str = ""
 

@@ -6,10 +6,12 @@ from sqlalchemy import or_, func
 
 from database.connection import get_db
 from models.models import Job, Company, SavedJob, Application, User, Profile
+
 from schemas.schemas import JobResponse, JobListResponse, JobSearchRequest
 from utils.auth import get_current_user, get_optional_user
 from services.matching_service import calculate_match_score
 from services.jsearch_service import get_job_details as jsearch_get_details
+from services.free_job_boards import get_free_board_job
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -154,7 +156,21 @@ async def get_job(
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
-    """Get job detail — handles both local DB IDs (int) and JSearch IDs (jsearch_* prefix)."""
+    """Get job detail — handles local DB IDs (int) and external IDs
+    (jsearch_* / remotive_* / jobicy_* prefixes)."""
+    # ── Free-board job (remotive_/jobicy_ prefixed ID) ──
+    if isinstance(job_id, str) and (
+        job_id.startswith("remotive_") or job_id.startswith("jobicy_")
+    ):
+        detail = await get_free_board_job(job_id)
+        if not detail:
+            raise HTTPException(status_code=404, detail="Job not found — listing may have expired from the source board")
+        # Compute match score if user has a profile
+        if user and user.profile:
+            from services.matching_service import compute_quick_match
+            detail["match_score"] = compute_quick_match(user.profile, detail)
+        return detail
+
     # ── JSearch job (prefixed ID) ────────────────────────
     if isinstance(job_id, str) and job_id.startswith("jsearch_"):
         js_real_id = job_id.removeprefix("jsearch_")
@@ -218,68 +234,96 @@ async def get_job(
     return resp
 
 
+EXTERNAL_PREFIXES = ("jsearch_", "remotive_", "jobicy_")
+
+
+async def _resolve_external_detail(job_id: str) -> Optional[dict]:
+    """Fetch full job detail for any prefixed external ID."""
+    if job_id.startswith("jsearch_"):
+        return await jsearch_get_details(job_id.removeprefix("jsearch_"))
+    return await get_free_board_job(job_id)
+
+
+async def _import_external_job(job_id: str, db: Session) -> Optional[Job]:
+    """Find or import an external job into the DB. Idempotent via external_id."""
+    # Already imported?
+    existing_job = db.query(Job).filter(Job.external_id == job_id).first()
+    if existing_job:
+        return existing_job
+
+    # Legacy jsearch rows stored before external_id existed — match the old
+    # fragile way (URL substring) and backfill external_id.
+    if job_id.startswith("jsearch_"):
+        js_real_id = job_id.removeprefix("jsearch_")
+        legacy = db.query(Job).filter(
+            Job.source == "jsearch", Job.application_url.ilike(f"%{js_real_id}%")
+        ).first()
+        if legacy:
+            legacy.external_id = job_id
+            db.flush()
+            return legacy
+
+    detail = await _resolve_external_detail(job_id)
+    if not detail:
+        return None
+
+    # Find or create company
+    company_name = detail.get("company_name", "")
+    company = db.query(Company).filter(Company.name == company_name).first() if company_name else None
+    if not company and company_name:
+        company = Company(
+            name=company_name,
+            logo_url=detail.get("company_logo", ""),
+            website=detail.get("company_website", ""),
+        )
+        db.add(company)
+        db.flush()
+
+    source = job_id.split("_", 1)[0]
+    job = Job(
+        company_id=company.id if company else 0,
+        title=detail.get("title", ""),
+        description=detail.get("description", ""),
+        requirements="\n".join(detail.get("qualifications", [])),
+        responsibilities="\n".join(detail.get("responsibilities", [])),
+        skills_required=detail.get("skills_required") or json.dumps(detail.get("skills", [])),
+        location=detail.get("location", ""),
+        work_type=detail.get("work_type", "hybrid"),
+        salary_min=detail.get("salary_min") or 0,
+        salary_max=detail.get("salary_max") or 0,
+        experience_level=detail.get("experience_level", "mid"),
+        employment_type=detail.get("employment_type", "full-time"),
+        application_url=detail.get("application_url") or detail.get("apply_link", ""),
+        source=source,
+        external_id=job_id,
+    )
+    db.add(job)
+    db.flush()
+    return job
+
+
 @router.post("/jobs/{job_id}/save")
 async def save_job(
     job_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Save a job — handles both local DB IDs and JSearch prefixed IDs.
-    For JSearch jobs, fetches details and stores in DB first."""
-    # ── JSearch job: fetch details and store in DB ──────
-    if isinstance(job_id, str) and job_id.startswith("jsearch_"):
-        js_real_id = job_id.removeprefix("jsearch_")
-
-        # Check if already stored locally
-        existing_job = db.query(Job).filter(
-            Job.source == "jsearch", Job.application_url.ilike(f"%{js_real_id}%")
-        ).first()
-
-        if not existing_job:
-            detail = await jsearch_get_details(js_real_id)
-            if not detail:
-                raise HTTPException(status_code=404, detail="Job not found")
-
-            # Find or create company
-            company_name = detail.get("company_name", "")
-            company = db.query(Company).filter(Company.name == company_name).first() if company_name else None
-            if not company and company_name:
-                company = Company(
-                    name=company_name,
-                    logo_url=detail.get("company_logo", ""),
-                    website=detail.get("company_website", ""),
-                )
-                db.add(company)
-                db.flush()
-
-            job = Job(
-                company_id=company.id if company else 0,
-                title=detail.get("title", ""),
-                description=detail.get("description", ""),
-                requirements="\n".join(detail.get("qualifications", [])),
-                responsibilities="\n".join(detail.get("responsibilities", [])),
-                skills_required=json.dumps(detail.get("skills", [])),
-                location=detail.get("location", ""),
-                work_type=detail.get("work_type", "hybrid"),
-                salary_min=detail.get("salary_min") or 0,
-                salary_max=detail.get("salary_max") or 0,
-                experience_level=detail.get("experience_level", "mid"),
-                employment_type=detail.get("employment_type", "full-time"),
-                application_url=detail.get("apply_link", ""),
-                source="jsearch",
-            )
-            db.add(job)
-            db.flush()
-            existing_job = job
+    """Save a job — handles local DB IDs and external prefixed IDs
+    (jsearch_/remotive_/jobicy_; external jobs are imported to DB first)."""
+    # ── External job: fetch details and store in DB ─────
+    if isinstance(job_id, str) and job_id.startswith(EXTERNAL_PREFIXES):
+        job = await _import_external_job(job_id, db)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
         # Check if already saved
         already = db.query(SavedJob).filter(
-            SavedJob.user_id == user.id, SavedJob.job_id == existing_job.id
+            SavedJob.user_id == user.id, SavedJob.job_id == job.id
         ).first()
         if already:
             return {"message": "Already saved"}
 
-        saved = SavedJob(user_id=user.id, job_id=existing_job.id)
+        saved = SavedJob(user_id=user.id, job_id=job.id)
         db.add(saved)
         db.commit()
         return {"message": "Job saved"}
@@ -307,14 +351,10 @@ async def unsave_job(
     job_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
-    """Unsave a job — handles both local and JSearch IDs."""
-    if isinstance(job_id, str) and job_id.startswith("jsearch_"):
-        # Find the local job that was stored from this JSearch ID
-        js_real_id = job_id.removeprefix("jsearch_")
-        existing_job = db.query(Job).filter(
-            Job.source == "jsearch", Job.application_url.ilike(f"%{js_real_id}%")
-        ).first()
+):    
+    """Unsave a job — handles local and external prefixed IDs."""
+    if isinstance(job_id, str) and job_id.startswith(EXTERNAL_PREFIXES):
+        existing_job = db.query(Job).filter(Job.external_id == job_id).first()
         if existing_job:
             db.query(SavedJob).filter(
                 SavedJob.user_id == user.id, SavedJob.job_id == existing_job.id

@@ -42,6 +42,9 @@ from models.session import RefreshSession
 from models.email_models import *
 from models.oauth_state import OAuthState
 
+# Recreate the schema every session — create_all alone would keep a stale
+# test_rolio.db missing newly-added columns and fail confusingly.
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 

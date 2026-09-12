@@ -20,12 +20,15 @@ interface Job {
   work_type: string;
   salary_min?: number;
   salary_max?: number;
+  salary_currency?: string;
+  salary_raw?: string;
   experience_level?: string;
   skills_required?: string;
   match_score?: number;
   posted_at: string;
   is_saved?: boolean;
   is_applied?: boolean;
+  source?: string;
 }
 
 function parseSkills(s?: string | string[]): string[] {
@@ -34,7 +37,17 @@ function parseSkills(s?: string | string[]): string[] {
   try { return JSON.parse(s); } catch { return s.split(',').map(x => x.trim()).filter(Boolean); }
 }
 
-function formatSalary(min?: number, max?: number): string {
+function formatSalary(min?: number, max?: number, currency?: string, raw?: string): string {
+  // Free boards (Remotive/Jobicy) often have no structured salary — show their
+  // raw display string (e.g. "$80k – $100k") when present.
+  if (!min && !max) return raw || '';
+  // Non-INR salaries render in their own currency (free boards are USD).
+  if (currency && currency !== 'INR') {
+    const fmt = (n: number) => `$${Math.round(n / 1000)}k`;
+    if (min && max) return `${fmt(min)} – ${fmt(max)}`;
+    if (min) return `From ${fmt(min)}`;
+    return `Up to ${fmt(max!)}`;
+  }
   if (!min && !max) return '';
   const fmt = (n: number) => formatINR(n);
   if (min && max) return `${fmt(min)} – ${fmt(max)}`;
@@ -160,12 +173,17 @@ export default function JobCard({ job, onSaveChange }: { job: Job; onSaveChange?
               )}
               {job.salary_min && job.salary_min > 0 ? (
                 <span className="text-xs text-white/20 group-hover:text-white/30 transition-colors duration-300">
-                  {formatSalary(job.salary_min, job.salary_max)}
+                  {formatSalary(job.salary_min, job.salary_max, (job as any).salary_currency, (job as any).salary_raw)}
                 </span>
               ) : null}
               {(job as any).source === 'jsearch' && (
                 <span className="text-[10px] px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.06] rounded text-white/30 ml-auto">
                   Live
+                </span>
+              )}
+              {((job as any).source === 'remotive' || (job as any).source === 'jobicy') && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.06] rounded text-white/30 ml-auto capitalize">
+                  via {(job as any).source}
                 </span>
               )}
               <span className="flex items-center gap-1 text-xs text-white/15 ml-auto group-hover:text-white/25 transition-colors duration-300">

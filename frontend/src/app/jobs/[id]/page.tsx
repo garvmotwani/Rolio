@@ -8,7 +8,7 @@ import { apiStream } from '@/lib/api';
 import { formatINRRange } from '@/lib/format';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MapPin, Clock, IndianRupee, Briefcase, ArrowLeft, Bookmark, BookmarkCheck,
+  MapPin, Clock, IndianRupee, DollarSign, Briefcase, ArrowLeft, Bookmark, BookmarkCheck,
   ExternalLink, Loader2, AlertCircle, CheckCircle2, Sparkles, Brain, ChevronDown, Target
 } from 'lucide-react';
 import FloatingOrbs from '@/components/FloatingOrbs';
@@ -50,7 +50,16 @@ function parseSkills(str: string): string[] {
   catch { return str.split(',').map(s => s.trim()).filter(Boolean); }
 }
 
-function formatSalary(min: number, max: number): string {
+function formatSalary(min: number, max: number, currency?: string, raw?: string): string {
+  // Free-board jobs (Remotive/Jobicy): no structured salary → raw string;
+  // structured but non-INR → $k format.
+  if (!min && !max) return raw || '';
+  if (currency && currency !== 'INR') {
+    const fmt = (n: number) => `$${Math.round(n / 1000)}k`;
+    if (min && max) return `${fmt(min)} – ${fmt(max)}`;
+    if (min) return `From ${fmt(min)}`;
+    return `Up to ${fmt(max!)}`;
+  }
   return formatINRRange(min, max);
 }
 
@@ -460,7 +469,7 @@ export default function JobDetailPage() {
                     <Link href={`/company/${job.company_id}`} className="hover:text-white/60 transition-colors">{job.company_name}</Link>
                     <span className="flex items-center gap-1"><MapPin size={13} />{job.location}</span>
                     <span className="capitalize">{job.work_type}</span>
-                    <span className="flex items-center gap-1"><IndianRupee size={13} />{formatSalary(job.salary_min, job.salary_max)}</span>
+                    <span className="flex items-center gap-1">{(job as any).salary_currency && (job as any).salary_currency !== 'INR' ? <DollarSign size={13} /> : <IndianRupee size={13} />}{formatSalary(job.salary_min, job.salary_max, (job as any).salary_currency, (job as any).salary_raw)}</span>
                     <span className="flex items-center gap-1 capitalize"><Briefcase size={13} />{job.experience_level}</span>
                   </div>
                 </div>
