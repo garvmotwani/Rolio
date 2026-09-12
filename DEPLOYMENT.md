@@ -20,9 +20,16 @@ the frontend directly at the backend origin.
 | Component | Service | Free tier |
 |---|---|---|
 | Frontend | [Vercel](https://vercel.com) | Hobby plan |
-| Backend | [Render](https://render.com) or [Railway](https://railway.app) | Free web service |
+| Backend | [Vercel](https://vercel.com) | Hobby plan (Python serverless function) |
 | PostgreSQL | [Neon](https://neon.tech) or Supabase | Free Postgres |
-| Redis | [Upstash](https://upstash.com) | Free tier |
+| Redis | [Upstash](https://upstash.com) | Free tier (optional) |
+
+> **Why the backend is also on Vercel:** Render's free tier now requires a
+> card in some regions and HF Spaces paywalled Docker containers (July 2026).
+> The whole backend ships as one Python serverless function (`api/index.py`
+> boots the FastAPI app; `vercel.json` routes `/api/*` to it) — no card, and
+> cold starts double as migration runs. Vercel Hobby allows 100GB-hrs/month,
+> plenty for a portfolio demo.
 
 ## Step 1 — Database (Neon/Supabase)
 
@@ -38,20 +45,18 @@ the frontend directly at the backend origin.
 > Just open Dashboard → **Connect** on the right branch and copy the
 > **pooled** connection string (hostname contains `-pooler`) as `DATABASE_URL`.
 
-## Step 2 — Backend (Render)
+## Step 2 — Backend (Vercel)
 
-1. **New Web Service** → connect your GitHub repo.
-2. Settings:
-   - **Root directory:** `backend`
-   - **Runtime:** Docker (uses `backend/Dockerfile`) — or Python with
-     start command `uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Health check path:** `/api/health`
-3. Environment variables (see checklist below).
-4. After first deploy, run the migration once (Render Shell or a one-off job):
-   `alembic upgrade head`
-   - For a demo, `seed_database()` runs automatically in development mode.
-     In production mode, seed manually if you want the demo account:
-     `python -c "from seed import seed_database; seed_database()"`
+1. Vercel dashboard → **Add New… → Project** → import `garvmotwani/Rolio` again.
+2. On the configure screen:
+   - **Project name:** `rolio-api`
+   - **Root Directory:** click `Edit` → select `backend`
+   - Framework preset: **Other** — the `vercel.json` inside `backend/` handles the rest
+3. Open **Environment Variables** and add the backend variables from the
+   checklist below (`ROLIO_ENV`, `DATABASE_URL`, secrets, etc.).
+4. Click **Deploy**. Migrations run automatically on the first request.
+   - For demo data, seed once from your machine with `DATABASE_URL` pointed
+     at the production database: `python -c "from seed import seed_database; seed_database()"`
 
 ## Step 3 — Frontend (Vercel)
 
@@ -62,7 +67,7 @@ the frontend directly at the backend origin.
    - Framework preset auto-detects **Next.js** — leave everything else at defaults (build command `next build`, output auto).
 4. Open **Environment Variables** and add exactly one:
    - Name: `BACKEND_ORIGIN`
-   - Value: your backend URL **with** `https://`, **no** trailing slash — e.g. `https://rolio-api.onrender.com`
+   - Value: your backend URL **with** `https://`, **no** trailing slash — e.g. `https://rolio-api.vercel.app` or `https://rolio-api-<team>.vercel.app`
    - Environments: check Production, Preview, and Development.
    - Do **NOT** set `NEXT_PUBLIC_API_URL` — leaving it unset activates the same-origin proxy that makes auth cookies work.
 5. Click **Deploy**. First build takes ~2–3 minutes; you'll get a `*.vercel.app` URL.
@@ -85,6 +90,8 @@ https://<frontend-domain>/api/gmail/callback
 
 Because the frontend proxies `/api/*`, Google callbacks land on the frontend
 origin and are proxied to the backend — keeping every cookie first-party.
+(In the all-Vercel setup, `BACKEND_ORIGIN` is the backend project's URL and
+both projects proxy `/api/*` through it.)
 
 Then set on the backend:
 
@@ -93,7 +100,7 @@ Then set on the backend:
 
 ## Environment variable checklist
 
-### Backend (Render)
+### Backend (Vercel → project `rolio-api`)
 
 | Variable | Required | Notes |
 |---|---|---|
@@ -113,10 +120,10 @@ Then set on the backend:
 | `JSEARCH_API_KEY` | optional | External job search; local seeded jobs always work |
 | `RESEND_API_KEY` / `EMAIL_FROM` | optional | Password-reset/verification emails |
 | `FORCE_HTTPS` | auto | Defaults on in production |
-| `TRUSTED_PROXIES` | ✅ | `*` on Render/Railway (app is only reachable via their proxy) |
+| `TRUSTED_PROXIES` | ✅ | `*` on Vercel (app is only reachable via their proxy) |
 | `MAX_UPLOAD_SIZE_MB` | optional | Default 10 |
 
-### Frontend (Vercel)
+### Frontend (Vercel → project `rolio`)
 
 | Variable | Required | Notes |
 |---|---|---|
@@ -125,9 +132,10 @@ Then set on the backend:
 
 ## Post-deploy verification
 
-1. `curl https://<backend-domain>/api/health` → `{"status":"ok",...}`
+1. `curl https://<backend-domain>/api/health` → `{"status":"ok",...}` (first
+   call may take ~10s — that's the cold start running migrations)
 2. `curl https://<frontend-domain>/api/health` → same JSON. This proves the
-   Vercel → Render proxy rewrite works (the browser never needs the backend URL).
+   frontend → backend proxy rewrite works (the browser never needs the backend URL).
 3. Open the app, register an account — cookies should be set on the frontend
    domain (DevTools → Application → Cookies).
 4. Log out / log back in; refresh the page while signed in (session survives).
@@ -137,5 +145,6 @@ Then set on the backend:
 
 ## Updating
 
-Push to `main` — Vercel and Render auto-deploy. Backend schema changes need
-`alembic upgrade head` (Render: run in shell or add a release-job command).
+Push to `main` — both Vercel projects auto-deploy (each only rebuilds when
+its root directory changes). Backend schema changes apply via automatic
+migrations on the next cold start.
