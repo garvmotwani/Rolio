@@ -502,20 +502,24 @@ button {
 }
 
 /* ─── Custom Cursor ─── */
+/* Positioning is handled per-frame by JS via transform (GPU-composited) —
+   deliberately NO transform transition here, it would fight the rAF loop
+   and re-introduce cursor lag. Size/color transitions are fine. */
 .cursor-dot {
   width: 6px;
   height: 6px;
   background: var(--text-primary);
   border-radius: 50%;
   position: fixed;
+  left: 0;
+  top: 0;
   pointer-events: none;
   z-index: 9999;
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
-              width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               background 0.3s,
               opacity 0.3s;
-  transform: translate(-50%, -50%);
+  will-change: transform;
   mix-blend-mode: difference;
 }
 
@@ -525,18 +529,25 @@ button {
   border: 1px solid var(--text-tertiary);
   border-radius: 50%;
   position: fixed;
+  left: 0;
+  top: 0;
   pointer-events: none;
   z-index: 9998;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-              width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
               height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.3s,
               opacity 0.3s;
-  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+
+/* Scale is a custom property consumed by the JS transform chain (JS composes
+   translate3d + scale) so hover styling never overwrites positioning. */
+.cursor-dot {
+  --cursor-scale: 1;
 }
 
 .cursor-hover .cursor-dot {
-  transform: translate(-50%, -50%) scale(2.5);
+  --cursor-scale: 2.5;
 }
 
 .cursor-hover .cursor-ring {
@@ -546,7 +557,7 @@ button {
 }
 
 .cursor-magnetic .cursor-dot {
-  transform: translate(-50%, -50%) scale(1.5);
+  --cursor-scale: 1.5;
 }
 
 .cursor-magnetic .cursor-ring {

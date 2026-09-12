@@ -67,6 +67,39 @@ def _build_jsearch_query(query: str, location: Optional[str], is_internship: boo
     return " ".join(parts)
 
 
+# Indian city aliases — users type "bangalore", job data says "Bengaluru".
+# Maps input → all acceptable spellings for local ILIKE matching.
+CITY_ALIASES: dict[str, list[str]] = {
+    "bangalore": ["bengaluru", "bangalore"],
+    "bengaluru": ["bengaluru", "bangalore"],
+    "bombay": ["mumbai", "bombay"],
+    "mumbai": ["mumbai", "bombay"],
+    "madras": ["chennai", "madras"],
+    "chennai": ["chennai", "madras"],
+    "calcutta": ["kolkata", "calcutta"],
+    "kolkata": ["kolkata", "calcutta"],
+    "gurgaon": ["gurugram", "gurgaon"],
+    "gurugram": ["gurugram", "gurgaon"],
+    "bangalore/bengaluru": ["bengaluru", "bangalore"],
+}
+
+
+def _location_variants(location: str) -> list[str]:
+    """All spellings to match for a location input (alias-aware)."""
+    loc = location.strip()
+    if not loc:
+        return []
+    key = loc.lower()
+    variants = CITY_ALIASES.get(key)
+    if variants:
+        return variants
+    # Multi-word input like "bangalore, india" — check the first token too
+    first = key.split(",")[0].strip()
+    if first != key and first in CITY_ALIASES:
+        return CITY_ALIASES[first] + [loc]
+    return [loc]
+
+
 def _local_search(
     q: str, location: str, work_type: Optional[str], experience_level: Optional[str],
     salary_min: Optional[int], salary_max: Optional[int],
@@ -88,7 +121,10 @@ def _local_search(
         )
 
     if location:
-        q_db = q_db.filter(Job.location.ilike(f"%{location}%"))
+        # Alias-aware: "bangalore" matches "Bengaluru" and vice versa
+        q_db = q_db.filter(
+            or_(*[Job.location.ilike(f"%{v}%") for v in _location_variants(location)])
+        )
 
     if work_type:
         q_db = q_db.filter(Job.work_type == work_type)
@@ -169,6 +205,10 @@ async def _jsearch_search(
 
     # Build a clean query
     search_query = _build_jsearch_query(q, location, is_internship)
+    # City alias: JSearch knows "Bangalore" but not always "Bengaluru"
+    loc_lower = (location or "").lower()
+    if loc_lower in ("bengaluru", "bengaluru, india"):
+        location = "bangalore"
 
     remote_flag = work_type == "remote" if work_type else False
 
@@ -309,9 +349,12 @@ async def unified_search(
     if user_id:
         profile = db.query(Profile).filter(Profile.user_id == user_id).first()
 
+    # External legs run when there's a query OR a location (e.g. "bangalore"
+    # with the keyword box empty should still find real jobs there).
+    external_trigger = bool((q or location) and source in ("all", "jsearch"))
+
     # ─── Guard the paid external search leg ───────────────
-    run_jsearch = bool(source in ("all", "jsearch") and q)
-    if run_jsearch and JSEARCH_CONFIGURED and not user:
+    if external_trigger and JSEARCH_CONFIGURED and not user:
         client_ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
                      or (request.client.host if request.client else "unknown"))
         if not _unified_limiter.check("unified_search", f"ip:{client_ip}", _UNIFIED_ANON_LIMIT_PER_HOUR, 3600):
@@ -322,13 +365,13 @@ async def unified_search(
     )
 
     jsearch_task = asyncio.create_task(
-        _jsearch_search(q, location, work_type, experience_level,
+        _jsearch_search(q or location, location, work_type, experience_level,
                         date_posted, page, user_id, profile, db)
-    ) if (source in ("all", "jsearch") and q) else None
+    ) if (external_trigger and q) else None
 
     free_task = asyncio.create_task(
-        _free_boards_search(q, page)
-    ) if (source == "all" and q) else None
+        _free_boards_search(q or location, page)
+    ) if (source == "all" and (q or location)) else None
 
     # Await all legs in parallel
     local_results, total_local = await local_task
