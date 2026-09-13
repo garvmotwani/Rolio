@@ -199,7 +199,12 @@ def startup():
         Base.metadata.create_all(bind=engine)
         seed_database()
     import os
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except OSError as e:
+        # config.py already guarantees a writable UPLOAD_DIR; this is a
+        # defensive guard so a filesystem oddity can never kill startup.
+        logger.warning("Could not create upload dir %r: %s", UPLOAD_DIR, e)
     try:
         redis = get_redis()
         if redis:

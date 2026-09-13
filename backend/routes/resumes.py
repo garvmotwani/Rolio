@@ -33,13 +33,25 @@ MAGIC_BYTES = {
 
 
 def _validate_file_content(file_path: str, expected_ext: str) -> bool:
-    """Validate file content matches expected type via magic bytes."""
+    """Validate file content matches expected type via magic bytes.
+
+    DOCX gets an extra structural check beyond the ZIP magic bytes: a genuine
+    Word document is a ZIP whose central directory lists word/document.xml.
+    A renamed generic ZIP (or an XLSX/PPTX) passes the magic-byte check but
+    fails this one.
+    """
     try:
         with open(file_path, "rb") as f:
             header = f.read(8)
         expected = MAGIC_BYTES.get(expected_ext)
         if expected and not header.startswith(expected):
             return False
+        if expected_ext == ".docx":
+            import zipfile
+            with zipfile.ZipFile(file_path) as zf:
+                names = set(zf.namelist())
+            if "word/document.xml" not in names:
+                return False
         return True
     except Exception:
         return False
@@ -90,7 +102,7 @@ async def upload_resume(
             os.remove(file_path)
         raise HTTPException(status_code=500, detail="Failed to save file")
 
-    # Validate content via magic bytes
+    # Validate content via magic bytes (+ DOCX structural check)
     if not _validate_file_content(file_path, ext):
         os.remove(file_path)
         log_upload_event(user.id, original_name, total_size, success=False, detail="invalid_content")
@@ -111,6 +123,14 @@ async def upload_resume(
         if os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(status_code=400, detail=parsed["error"])
+
+    # The physical file is a processing artifact: everything of value was
+    # extracted into the database above/below. Serverless /tmp is ephemeral
+    # and nothing ever reads the file again, so delete it immediately.
+    try:
+        os.remove(file_path)
+    except OSError:
+        pass
 
     # Delete previous resume file if replacing
     existing = db.query(Resume).filter(Resume.user_id == user.id).first()

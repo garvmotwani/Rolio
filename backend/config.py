@@ -151,7 +151,35 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "Rolio <onboarding@resend.dev>")
 
 # ─── Uploads ─────────────────────────────────────────────────
+# Serverless filesystems (Vercel /var/task) are READ-ONLY except /tmp.
+# Resume files are processing artifacts only: they are uploaded, validated,
+# parsed, and their extracted content persisted to the database within a
+# single request. The physical file is never served or read again, so /tmp is
+# the correct location on Vercel — no object storage required.
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"))
+if os.getenv("VERCEL") and not os.getenv("UPLOAD_DIR"):
+    UPLOAD_DIR = "/tmp/rolio-uploads"
+
+# Writability guard: if the resolved upload dir cannot be created/written
+# (read-only deployment FS, bad override), fall back to /tmp rather than
+# letting the app crash at startup. Logs a warning; never fails silently —
+# the fallback is a real, writable directory.
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    _probe = os.path.join(UPLOAD_DIR, ".write-probe")
+    with open(_probe, "w") as _f:
+        _f.write("ok")
+    os.remove(_probe)
+except OSError:
+    _fallback = "/tmp/rolio-uploads"
+    if os.path.abspath(UPLOAD_DIR) != os.path.abspath(_fallback):
+        logger.warning(
+            "UPLOAD_DIR %r is not writable (read-only filesystem?). "
+            "Falling back to %s.", UPLOAD_DIR, _fallback,
+        )
+        UPLOAD_DIR = _fallback
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx"}

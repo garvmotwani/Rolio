@@ -3,6 +3,13 @@ import json
 import re
 from config import UPLOAD_DIR
 
+# Resource-exhaustion guards: crafted documents with enormous page/paragraph
+# counts can burn the entire serverless time budget. These caps bound parsing
+# work while comfortably exceeding any legitimate resume.
+MAX_PDF_PAGES = 60
+MAX_DOCX_PARAGRAPHS = 2000
+MAX_EXTRACTED_CHARS = 400_000
+
 
 def parse_resume_text(text: str) -> dict:
     """Parse resume text and extract structured information."""
@@ -85,27 +92,35 @@ def parse_resume_text(text: str) -> dict:
 
 
 def extract_text_from_pdf(file_path: str) -> str:
-    """Extract text from PDF file."""
+    """Extract text from PDF file (page-count and size bounded)."""
     try:
         import pdfplumber
         with pdfplumber.open(file_path) as pdf:
+            if len(pdf.pages) > MAX_PDF_PAGES:
+                return "Error reading PDF: document exceeds maximum page count"
             text = ""
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
-            return text
+                if len(text) > MAX_EXTRACTED_CHARS:
+                    break
+            return text[:MAX_EXTRACTED_CHARS]
     except Exception as e:
         return f"Error reading PDF: {str(e)}"
 
 
 def extract_text_from_docx(file_path: str) -> str:
-    """Extract text from DOCX file."""
+    """Extract text from DOCX file (paragraph-count and size bounded)."""
     try:
         from docx import Document
         doc = Document(file_path)
-        text = "\n".join([para.text for para in doc.paragraphs])
-        return text
+        text = ""
+        for i, para in enumerate(doc.paragraphs):
+            if i >= MAX_DOCX_PARAGRAPHS or len(text) > MAX_EXTRACTED_CHARS:
+                break
+            text += para.text + "\n"
+        return text[:MAX_EXTRACTED_CHARS]
     except Exception as e:
         return f"Error reading DOCX: {str(e)}"
 

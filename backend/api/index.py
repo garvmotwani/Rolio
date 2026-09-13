@@ -20,8 +20,8 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Serverless functions may land on a read-only FS; keep resume uploads in /tmp.
-os.environ.setdefault("UPLOAD_DIR", "/tmp/rolio-uploads")
+# UPLOAD_DIR writability is handled in config.py (Vercel-aware, /tmp fallback
+# with write-probe). No override needed here.
 
 try:
     from main import app  # noqa: E402
