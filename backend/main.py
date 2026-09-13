@@ -214,6 +214,19 @@ def startup():
         logger.warning(f"Redis not available: {e}. Using in-memory rate limiting.")
 
 
+# ─── Root ────────────────────────────────────────────────────
+@app.get("/")
+def root():
+    """Friendly index so visiting the API root doesn't look broken."""
+    return {
+        "name": "Rolio API",
+        "version": "1.0.0",
+        "status": "ok",
+        "health": "/api/health",
+        "docs": "/docs" if not IS_PRODUCTION else "disabled in production",
+    }
+
+
 # ─── Health Check ────────────────────────────────────────────
 @app.get("/api/health")
 def health_check():
