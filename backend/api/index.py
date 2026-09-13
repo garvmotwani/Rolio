@@ -45,4 +45,7 @@ except BaseException:  # SystemExit from config fail-fast must be caught too
 
     app = _boot
 
-handler = app  # Vercel ASGI adapter picks this up
+# NOTE: deliberately export ONLY `app`. Vercel's Python runtime treats a
+# top-level `handler` as a plain (req, res) function — when both `app` and
+# `handler` exist the adapter can bind `handler` and invoke the ASGI app
+# incorrectly, crashing before any of this module's error handling runs.
