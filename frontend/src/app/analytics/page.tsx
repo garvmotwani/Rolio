@@ -39,12 +39,22 @@ interface AnalyticsData {
   }[];
 }
 
+interface RoadmapData {
+  target_role: string;
+  has_profile: boolean;
+  message?: string;
+  readiness?: number;
+  matching_jobs?: number;
+  steps: { skill: string; jobs_missing: number; avg_readiness_gain: number; priority: number }[];
+}
+
 export default function AnalyticsPage() {
   const { user, hydrated } = useAuthStore();
   const router = useRouter();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(90);
+  const [roadmap, setRoadmap] = useState<RoadmapData | null>(null);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -57,6 +67,8 @@ export default function AnalyticsPage() {
     try {
       const d = await apiGet<AnalyticsData>(`/api/analytics/dashboard?days=${days}`);
       setData(d);
+      // Non-fatal: roadmap section hides if unavailable
+      apiGet<RoadmapData>('/api/analytics/career-roadmap').then(setRoadmap).catch(() => setRoadmap(null));
     } catch (err) {
       console.error(err);
     } finally {
@@ -167,6 +179,57 @@ export default function AnalyticsPage() {
             <CompanyBars companies={company_distribution} />
           </ChartCard>
         </div>
+
+        {/* ─── Career Roadmap (data-driven, from real listings) ─── */}
+        {roadmap && roadmap.target_role && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-[#050505] border border-white/[0.05] rounded-xl p-6 mb-6"
+          >
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-sm font-semibold">Roadmap to {roadmap.target_role}</h3>
+                {roadmap.readiness != null ? (
+                  <p className="text-xs text-white/25 mt-1">
+                    Current readiness {roadmap.readiness}% across {roadmap.matching_jobs} matching jobs
+                  </p>
+                ) : (
+                  <p className="text-xs text-white/25 mt-1">{roadmap.message}</p>
+                )}
+              </div>
+              {roadmap.readiness != null && (
+                <div className="text-right flex-shrink-0">
+                  <p className="text-2xl font-bold">{roadmap.readiness}%</p>
+                  <p className="text-[10px] text-white/25 uppercase tracking-wider">ready</p>
+                </div>
+              )}
+            </div>
+            {roadmap.steps.length > 0 && (
+              <div className="space-y-2">
+                {roadmap.steps.map((s, i) => (
+                  <motion.div
+                    key={s.skill}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.2 + i * 0.04 }}
+                    className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-white/[0.02] transition-colors"
+                  >
+                    <span className="text-[10px] font-mono text-white/20 w-5">{i + 1}.</span>
+                    <span className="text-[13px] text-white/60 capitalize flex-1">{s.skill}</span>
+                    <span className="text-[11px] text-white/25">
+                      {s.jobs_missing}/{roadmap.matching_jobs} target jobs
+                    </span>
+                    {s.avg_readiness_gain > 0 && (
+                      <span className="text-[11px] font-mono text-white/45 w-14 text-right">+{s.avg_readiness_gain}%</span>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* ─── Recent Activity ─── */}
         <motion.div

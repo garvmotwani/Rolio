@@ -94,6 +94,100 @@ def get_skill_gaps(
     }
 
 
+@router.get("/career-roadmap")
+def get_career_roadmap(
+    role: str = Query("", max_length=100, description="Target role; defaults to profile title/first preferred role"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Career roadmap for a target role, derived from REAL job listings.
+
+    Readiness = average match score across the target role's active jobs.
+    Each skill to learn shows how many target-role jobs require it and the
+    average readiness gain from having it (computed by re-scoring, not
+    invented). No AI, no generic advice — pure data the user can act on.
+    """
+    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
+    if not profile:
+        return {"target_role": role, "has_profile": False, "steps": []}
+
+    target = (role or profile.title or "").strip()
+    if not target:
+        try:
+            import json as _json
+            preferred = _json.loads(profile.preferred_roles) if profile.preferred_roles else []
+        except Exception:
+            preferred = []
+        target = preferred[0] if preferred else ""
+
+    if not target:
+        return {
+            "target_role": "",
+            "has_profile": True,
+            "message": "Set a target role in your profile to build a roadmap.",
+            "readiness": None,
+            "steps": [],
+        }
+
+    target_lower = target.lower()
+    profile_skills = [s.name for s in profile.skills]
+    jobs = db.query(Job).filter(Job.is_active == True).all()
+
+    target_jobs = []
+    for job in jobs:
+        title_l = (job.title or "").lower()
+        if target_lower in title_l:
+            target_jobs.append(job)
+
+    if not target_jobs:
+        return {
+            "target_role": target,
+            "has_profile": True,
+            "message": f"No active {target} jobs in the database yet — check back as listings refresh.",
+            "readiness": None,
+            "matching_jobs": 0,
+            "steps": [],
+        }
+
+    from services.matching_service import score_job, analyze_match
+
+    readiness_sum = 0.0
+    gap_data: dict = {}
+    for job in target_jobs:
+        base = score_job(profile, job, db, cached_skills=profile_skills)
+        readiness_sum += base
+        breakdown = analyze_match(profile, job, db, cached_skills=profile_skills)
+        for m in breakdown.get("missing_skill_details", []):
+            skill = m["skill"]
+            entry = gap_data.setdefault(skill, {"jobs_missing": 0, "gain_sum": 0.0, "gain_n": 0})
+            entry["jobs_missing"] += 1
+            patched = profile_skills + [skill]
+            gain = max(0.0, score_job(profile, job, db, cached_skills=patched) - base)
+            entry["gain_sum"] += gain
+            entry["gain_n"] += 1
+
+    readiness = round(readiness_sum / len(target_jobs), 1)
+
+    steps = []
+    for skill, e in gap_data.items():
+        steps.append({
+            "skill": skill,
+            "jobs_missing": e["jobs_missing"],
+            "avg_readiness_gain": round(e["gain_sum"] / e["gain_n"], 1) if e["gain_n"] else 0.0,
+            "priority": round(e["jobs_missing"] / len(target_jobs) * 100),
+        })
+    steps.sort(key=lambda s: (-s["jobs_missing"], -s["avg_readiness_gain"]))
+
+    return {
+        "target_role": target,
+        "has_profile": True,
+        "readiness": readiness,
+        "matching_jobs": len(target_jobs),
+        "current_skills": profile_skills,
+        "steps": steps[:8],
+    }
+
+
 @router.get("/dashboard")
 def get_dashboard_analytics(
     days: int = Query(90, ge=7, le=365),
