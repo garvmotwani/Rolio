@@ -39,6 +39,20 @@ interface DashboardData {
   unread_notifications: number;
 }
 
+interface GapEntry {
+  skill: string;
+  jobs_missing: number;
+  critical_jobs: number;
+  avg_score_gain: number;
+  importance: string;
+}
+
+interface GapResponse {
+  gaps: GapEntry[];
+  jobs_analyzed: number;
+  strong_matches: number;
+}
+
 const container = {
   hidden: { opacity: 0 },
   show: {
@@ -87,6 +101,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [gaps, setGaps] = useState<GapEntry[]>([]);
+  const [gapStats, setGapStats] = useState({ jobs_analyzed: 0, strong_matches: 0 });
 
   useEffect(() => {
     if (!hydrated) return;
@@ -96,6 +112,13 @@ export default function DashboardPage() {
 
   const loadDashboard = async () => {
     try {
+      // Skill gaps load in parallel; failure is non-fatal (card hides)
+      apiGet<GapResponse>('/api/analytics/skill-gaps')
+        .then((g) => {
+          setGaps(g.gaps || []);
+          setGapStats({ jobs_analyzed: g.jobs_analyzed || 0, strong_matches: g.strong_matches || 0 });
+        })
+        .catch(() => {});
       const result = await apiGet<DashboardData>('/api/dashboard');
       setData(result);
     } catch (err) {
@@ -348,6 +371,46 @@ export default function DashboardPage() {
                 </Link>
               </div>
             </TiltCard>
+
+            {/* Skill Gaps — what to improve, with honest impact estimates */}
+            {gaps.length > 0 && (
+              <TiltCard tiltAmount={3}>
+                <div className="bg-[#050505] border border-white/[0.04] rounded-xl p-5">
+                  <h3 className="text-[13px] font-semibold mb-1 flex items-center gap-2">
+                    <Target size={13} className="text-white/30" />
+                    Skills to improve
+                  </h3>
+                  <p className="text-[10px] text-white/20 mb-4">
+                    From {gapStats.strong_matches} jobs scoring 60%+
+                  </p>
+                  <div className="space-y-3">
+                    {gaps.slice(0, 4).map((g, i) => (
+                      <motion.div
+                        key={g.skill}
+                        initial={{ opacity: 0, x: -5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.3 + i * 0.05 }}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs text-white/60 capitalize truncate">
+                            {g.importance === 'critical' ? '● ' : '○ '}{g.skill}
+                          </p>
+                          <p className="text-[10px] text-white/25">
+                            missing from {g.jobs_missing} job{g.jobs_missing !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        {g.avg_score_gain > 0 && (
+                          <span className="text-[10px] font-mono text-white/40 flex-shrink-0">
+                            +{g.avg_score_gain.toFixed(1)}%
+                          </span>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              </TiltCard>
+            )}
 
             {/* Tips */}
             {data.profile_tips.length > 0 && (

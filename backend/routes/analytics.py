@@ -11,8 +11,87 @@ from typing import Optional
 from database.connection import get_db
 from models.models import User, Application, SavedJob, Job, Company, Profile, Skill
 from utils.auth import get_current_user
+from services.matching_service import analyze_match, score_job
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+
+@router.get("/skill-gaps")
+def get_skill_gaps(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Aggregated skill-gap analysis over the user's strong local matches.
+
+    Deterministic and data-driven: scans active local jobs the candidate
+    scores >= 60 on, collects their missing skills with importance, and
+    estimates impact honestly by RE-SCORING each job as if the user had the
+    skill (no invented numbers). Sorted by (importance, impact).
+    """
+    from services.matching_service import MATCH_WEIGHTS
+
+    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
+    if not profile:
+        return {"gaps": [], "jobs_analyzed": 0, "strong_matches": 0}
+
+    profile_skills = [s.name for s in profile.skills]
+    jobs = db.query(Job).filter(Job.is_active == True).all()
+
+    # Aggregate missing skills across strong matches
+    gap_jobs: dict = {}          # skill -> {count, critical_count, jobs, total_gain, considered}
+    strong = 0
+    analyzed = 0
+
+    for job in jobs:
+        breakdown = analyze_match(profile, job, db, cached_skills=profile_skills)
+        overall = breakdown.get("overall", 0)
+        if overall < 30:
+            continue
+        analyzed += 1
+        if overall < 60:
+            continue
+        strong += 1
+
+        for m in breakdown.get("missing_skill_details", []):
+            skill = m["skill"]
+            importance = m.get("importance", "nice_to_have")
+            entry = gap_jobs.setdefault(
+                skill,
+                {"skill": skill, "critical_count": 0, "job_count": 0, "impact_sum": 0.0, "impact_n": 0},
+            )
+            entry["job_count"] += 1
+            if importance == "critical":
+                entry["critical_count"] += 1
+
+            # Honest impact: re-score this job as if the user had the skill.
+            patched = profile_skills + [skill]
+            new_score = score_job(profile, job, db, cached_skills=patched)
+            gain = max(0.0, new_score - overall)
+            entry["impact_sum"] += gain
+            entry["impact_n"] += 1
+
+    gaps = []
+    for entry in gap_jobs.values():
+        gaps.append({
+            "skill": entry["skill"],
+            "jobs_missing": entry["job_count"],
+            "critical_jobs": entry["critical_count"],
+            "avg_score_gain": round(entry["impact_sum"] / entry["impact_n"], 1) if entry["impact_n"] else 0.0,
+            "importance": "critical" if entry["critical_count"] > entry["job_count"] / 2 else "nice_to_have",
+        })
+
+    # Sort: critical first, then by job count (breadth of opportunity), then impact
+    gaps.sort(key=lambda g: (
+        0 if g["importance"] == "critical" else 1,
+        -g["jobs_missing"],
+        -g["avg_score_gain"],
+    ))
+
+    return {
+        "gaps": gaps[:12],
+        "jobs_analyzed": analyzed,
+        "strong_matches": strong,
+    }
 
 
 @router.get("/dashboard")
