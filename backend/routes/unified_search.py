@@ -100,6 +100,26 @@ def _location_variants(location: str) -> list[str]:
     return [loc]
 
 
+def _query_relevance(q: str, title: str, skills: list) -> int:
+    """How well the job matches the SEARCH QUERY (0-100) — distinct from the
+    candidate match score. Title hits weigh most, then skills. Lets the UI
+    show "exactly what you searched for" separately from "fits you"."""
+    if not q:
+        return 0
+    terms = [t for t in q.lower().replace(",", " ").split() if len(t) >= 2]
+    if not terms:
+        return 0
+    title_l = (title or "").lower()
+    skills_l = " ".join(s.lower() for s in (skills or []))
+    hits = 0
+    for t in terms:
+        if t in title_l:
+            hits += 1.0
+        elif t in skills_l:
+            hits += 0.6
+    return round(min(100, hits / len(terms) * 100))
+
+
 def _local_search(
     q: str, location: str, work_type: Optional[str], experience_level: Optional[str],
     salary_min: Optional[int], salary_max: Optional[int],
@@ -110,15 +130,30 @@ def _local_search(
     q_db = db.query(Job).filter(Job.is_active == True)
 
     if q:
-        search_term = f"%{q}%"
-        q_db = q_db.filter(
-            or_(
-                Job.title.ilike(search_term),
-                Job.description.ilike(search_term),
-                Job.skills_required.ilike(search_term),
-                Job.requirements.ilike(search_term),
+        # Multi-term search: "backend python" must match jobs containing BOTH
+        # terms (across title/description/skills), not the literal substring.
+        terms = [t for t in q.replace(",", " ").split() if len(t) >= 2][:5]
+        if terms:
+            for term in terms:
+                term_filter = f"%{term}%"
+                q_db = q_db.filter(
+                    or_(
+                        Job.title.ilike(term_filter),
+                        Job.description.ilike(term_filter),
+                        Job.skills_required.ilike(term_filter),
+                        Job.requirements.ilike(term_filter),
+                    )
+                )
+        else:
+            search_term = f"%{q}%"
+            q_db = q_db.filter(
+                or_(
+                    Job.title.ilike(search_term),
+                    Job.description.ilike(search_term),
+                    Job.skills_required.ilike(search_term),
+                    Job.requirements.ilike(search_term),
+                )
             )
-        )
 
     if location:
         # Alias-aware: "bangalore" matches "Bengaluru" and vice versa
@@ -193,6 +228,7 @@ def _local_search(
             "match_score": match_score,
             "matched_skills": matched,
             "missing_skills": missing,
+            "search_relevance": _query_relevance(q, job.title, skills),
             "posted_at": job.posted_at.isoformat(),
             "is_saved": is_saved,
             "is_applied": is_applied,
@@ -274,6 +310,9 @@ async def _jsearch_search(
             "employment_type": job.get("employment_type", "full-time"),
             "skills": job.get("skills", []),
             "match_score": job.get("match_score", 0),
+            "matched_skills": job.get("matched_skills", []),
+            "missing_skills": job.get("missing_skills", []),
+            "search_relevance": _query_relevance(q, job.get("title", ""), job.get("skills", [])),
             "posted_at": job.get("posted_at", ""),
             "is_saved": False,
             "is_applied": False,
@@ -401,7 +440,17 @@ async def unified_search(
 
     all_results = local_results + deduped_external
 
+    # Uniformly compute search relevance (and candidate match for external
+    # jobs that lack it) so every card can show both dimensions.
+    if q:
+        for j in all_results:
+            j["search_relevance"] = _query_relevance(q, j.get("title", ""), j.get("skills", []))
     if profile:
+        profile_skills = [s.name for s in profile.skills]
+        from services.matching_service import score_job_like
+        for j in all_results:
+            if not j.get("match_score"):
+                j["match_score"] = score_job_like(profile, j, db, cached_skills=profile_skills)
         all_results.sort(key=lambda x: x.get("match_score", 0), reverse=True)
     else:
         all_results.sort(key=lambda x: x.get("posted_at", ""), reverse=True)
