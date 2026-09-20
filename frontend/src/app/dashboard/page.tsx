@@ -328,7 +328,7 @@ export default function DashboardPage() {
             {activity.length > 0 && (
               <motion.div variants={item}>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-semibold">What's new</h2>
+                  <h2 className="text-base font-semibold">What&rsquo;s new</h2>
                   <Link href="/applications" className="text-xs text-white/25 hover:text-white/50 flex items-center gap-1 transition-colors duration-200">
                     Applications <ChevronRight size={12} />
                   </Link>
