@@ -142,14 +142,31 @@ function MatchBreakdown({ matchData }: { matchData: any }) {
         </div>
       )}
 
-      {/* Missing skills */}
-      {matchData.breakdown?.missing_skills?.length > 0 && (
+      {/* Strong matches */}
+      {matchData.breakdown?.strong_matches?.length > 0 && (
+        <div>
+          <p className="text-[10px] text-white/25 mb-2 uppercase tracking-wider">Strong matches</p>
+          <div className="flex flex-wrap gap-1.5">
+            {matchData.breakdown.strong_matches.map((s: string) => (
+              <span key={s} className="px-2.5 py-1 bg-white/[0.06] border border-white/[0.08] rounded-full text-xs text-white/60 capitalize flex items-center gap-1">
+                <CheckCircle2 size={10} className="text-white/40" /> {s}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Missing skills — classified by the job's own requirements */}
+      {matchData.breakdown?.missing_skill_details?.length > 0 && (
         <div>
           <p className="text-[10px] text-white/25 mb-2 uppercase tracking-wider">Missing skills</p>
           <div className="flex flex-wrap gap-1.5">
-            {matchData.breakdown.missing_skills.map((s: string) => (
-              <span key={s} className="px-2.5 py-1 bg-white/[0.02] border border-white/[0.04] rounded-full text-xs text-white/30 flex items-center gap-1">
-                <AlertCircle size={10} className="text-white/20" /> {s}
+            {matchData.breakdown.missing_skill_details.map((m: any) => (
+              <span key={m.skill} className={`px-2.5 py-1 rounded-full text-xs capitalize flex items-center gap-1 border ${m.importance === 'critical'
+                ? 'bg-white/[0.05] border-white/[0.12] text-white/55'
+                : 'bg-white/[0.02] border-white/[0.04] text-white/30'}`}>
+                <AlertCircle size={10} className={m.importance === 'critical' ? 'text-white/40' : 'text-white/20'} />
+                {m.skill}{m.importance === 'critical' ? ' · required' : ''}
               </span>
             ))}
           </div>
