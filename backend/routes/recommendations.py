@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database.connection import get_db
 from models.models import User, Profile, Job, Company, SavedJob, Application
 from utils.auth import get_current_user
-from services.matching_service import calculate_match_score, get_recommendations
+from services.matching_service import calculate_match_score, get_recommendations, analyze_match
 
 router = APIRouter(prefix="/api", tags=["recommendations"])
 
@@ -23,6 +23,7 @@ def get_user_recommendations(
             return []
 
     recommendations = get_recommendations(profile, db, limit=15)
+    profile_skills = [s.name for s in profile.skills]
 
     results = []
     for job, score in recommendations:
@@ -57,8 +58,18 @@ def get_user_recommendations(
             "company_logo": company.logo_url if company else "",
             "company_industry": company.industry if company else "",
             "match_score": score,
+            "matched_skills": [],
+            "missing_skills": [],
             "is_saved": is_saved,
             "is_applied": is_applied,
         })
+
+    # Explainable card fields (batch-computed after assembly)
+    from services.matching_service import analyze_match
+    for item, (job, _score) in zip(results, recommendations):
+        breakdown = analyze_match(profile, job, db, cached_skills=profile_skills)
+        item["matched_skills"] = breakdown.get("matched_skills", [])[:4]
+        item["missing_skills"] = [m["skill"] if isinstance(m, dict) else m
+                                  for m in breakdown.get("missing_skill_details", [])[:3]]
 
     return results
