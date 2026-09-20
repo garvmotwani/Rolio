@@ -544,17 +544,31 @@ def sync_emails(user: User = Depends(get_current_user), db: Session = Depends(ge
                 )
                 db.add(event)
 
+                # Confidence-gated automation: only strong matches (sender-domain
+                # or company-name level) change status automatically. Medium
+                # confidence becomes a review suggestion; low confidence is
+                # logged as an email link only — never silent auto-updates.
                 if email_data["parsed_status"] in ("interview", "offer", "rejection"):
                     status_map = {"interview": "screening", "offer": "offer", "rejection": "rejected"}
-                    old_status = matched_app.status
-                    matched_app.status = status_map[email_data["parsed_status"]]
-                    db.add(ApplicationEvent(
-                        application_id=matched_app.id, user_id=user.id,
-                        event_type="status_change",
-                        title="Status updated from email",
-                        description=f"Auto-updated to {matched_app.status}",
-                        old_value=old_status, new_value=matched_app.status,
-                    ))
+                    suggested = status_map[email_data["parsed_status"]]
+                    if confidence >= 80:
+                        old_status = matched_app.status
+                        matched_app.status = suggested
+                        db.add(ApplicationEvent(
+                            application_id=matched_app.id, user_id=user.id,
+                            event_type="status_change",
+                            title="Status updated from email",
+                            description=f"Auto-updated to {matched_app.status} ({method}, {confidence}% match)",
+                            old_value=old_status, new_value=matched_app.status,
+                        ))
+                    elif confidence >= 60:
+                        db.add(ApplicationEvent(
+                            application_id=matched_app.id, user_id=user.id,
+                            event_type="status_suggestion",
+                            title="Review email — possible status change",
+                            description=f"Email suggests status '{suggested}'. Review and update manually.",
+                            related_email_id=email_msg.id,
+                        ))
 
         sync_log.status = "completed"
         sync_log.completed_at = datetime.utcnow()
