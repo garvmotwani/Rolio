@@ -351,7 +351,9 @@ export default function JobDetailPage() {
     if (!user) return;
     setMatchLoading(true);
     try {
-      const data = await apiPost<any>('/api/ai/match', { job_id: Number(params.id) });
+      // Pass the raw id — backend resolves both numeric (local) and
+      // prefixed (jsearch_/remotive_/jobicy_) external jobs.
+      const data = await apiPost<any>('/api/ai/match', { job_id: params.id });
       setMatchData(data);
     } catch (err) { console.error(err); }
     finally { setMatchLoading(false); }

@@ -9,7 +9,8 @@ from models.models import Job, Company, SavedJob, Application, User, Profile
 
 from schemas.schemas import JobResponse, JobListResponse, JobSearchRequest
 from utils.auth import get_current_user, get_optional_user
-from services.matching_service import calculate_match_score
+from services.matching_service import calculate_match_score, score_job, analyze_job_like
+from services.skill_normalizer import overlap_sets
 from services.jsearch_service import get_job_details as jsearch_get_details
 from services.free_job_boards import get_free_board_job
 
@@ -141,6 +142,12 @@ def search_jobs(
         resp = job_to_response(job, user_id, db)
         if profile:
             resp.match_score = calculate_match_score(profile, job, db, cached_skills=cached_profile_skills)
+            # Explainable fields for the job card (top matches + gaps)
+            from services.matching_service import analyze_match
+            breakdown = analyze_match(profile, job, db)
+            resp.matched_skills = breakdown.get("matched_skills", [])[:4]
+            resp.missing_skills = [m["skill"] if isinstance(m, dict) else m
+                                   for m in breakdown.get("missing_skill_details", [])[:3]]
         job_responses.append(resp)
 
     # Sort by match score if best_match

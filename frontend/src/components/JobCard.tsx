@@ -25,6 +25,8 @@ interface Job {
   experience_level?: string;
   skills_required?: string;
   match_score?: number;
+  matched_skills?: string[];
+  missing_skills?: string[];
   posted_at: string;
   is_saved?: boolean;
   is_applied?: boolean;
@@ -94,6 +96,9 @@ export default function JobCard({ job, onSaveChange }: { job: Job; onSaveChange?
   };
 
   const skills = parseSkills((job as any).skills_required || (job as any).skills);
+  // Server-computed explainable fields (present only for logged-in users with a profile)
+  const matched = (job.matched_skills || []).filter(Boolean);
+  const missing = (job.missing_skills || []).filter(Boolean);
   const score = job.match_score ? Math.round(job.match_score) : null;
   const isStrong = score !== null && score >= 80;
 
@@ -191,8 +196,41 @@ export default function JobCard({ job, onSaveChange }: { job: Job; onSaveChange?
               </span>
             </div>
 
-            {/* Skills row */}
-            {skills.length > 0 && (
+            {/* Skills row — matched (✓) vs missing (⚠) when profile data exists */}
+            {(matched.length > 0 || missing.length > 0) ? (
+              <div className="flex items-center gap-1.5 mt-3.5 flex-wrap">
+                {matched.slice(0, 3).map((skill, i) => (
+                  <motion.span
+                    key={`m-${skill}`}
+                    className="text-[11px] px-2 py-0.5 bg-white/[0.06] border border-white/[0.10] rounded text-white/70 font-medium transition-all duration-500"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.03 }}
+                  >
+                    ✓ {skill}
+                  </motion.span>
+                ))}
+                {missing.slice(0, 2).map((skill) => (
+                  <span
+                    key={`g-${skill}`}
+                    className="text-[11px] px-2 py-0.5 bg-transparent border border-dashed border-white/[0.14] rounded text-white/35"
+                    title={`Missing skill: ${skill}`}
+                  >
+                    ⚠ {skill}
+                  </span>
+                ))}
+                {job.experience_level && (
+                  <span className="text-[11px] px-2 py-0.5 bg-white/[0.05] border border-white/[0.05] rounded text-white/45 capitalize ml-1">
+                    {job.experience_level}
+                  </span>
+                )}
+                {isStrong && (
+                  <span className="text-[11px] px-2 py-0.5 bg-white/[0.08] border border-white/[0.08] rounded text-white/60 ml-auto font-medium">
+                    Strong
+                  </span>
+                )}
+              </div>
+            ) : skills.length > 0 && (
               <div className="flex items-center gap-1.5 mt-3.5 flex-wrap">
                 {skills.slice(0, 5).map((skill, i) => (
                   <motion.span

@@ -26,6 +26,7 @@ from services.jsearch_service import (
     search_jobs, get_job_details, search_company_jobs, get_similar_jobs,
     get_search_summary, JSEARCH_CONFIGURED,
 )
+from services.matching_service import score_job_like, analyze_job_like
 from config import RATE_LIMIT_JSEARCH_PER_MINUTE
 
 logger = logging.getLogger("rolio.jsearch")
@@ -131,21 +132,21 @@ class JSearchRequest(BaseModel):
 
 
 def _apply_match_scores(results: dict, user: Optional[User], db) -> dict:
-    """Attach lightweight skill-overlap match scores for logged-in users."""
+    """Attach unified engine match scores for logged-in users (same formula as
+    every other job source — see services.matching_service)."""
     if not user or not results.get("data"):
         return results
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     if not profile:
         return results
-    user_skills = set(s.name.lower() for s in profile.skills)
+    cached_skills = [s.name for s in profile.skills]
     for job in results["data"]:
-        job_skills = set(s.lower() for s in job.get("skills", []))
-        if user_skills and job_skills:
-            overlap = len(user_skills & job_skills)
-            total = len(job_skills)
-            job["match_score"] = round((overlap / max(total, 1)) * 100, 1)
-        else:
-            job["match_score"] = 0
+        job["match_score"] = score_job_like(profile, job, db, cached_skills=cached_skills)
+        # Explainable card fields: top matches + classified gaps (required > preferred)
+        breakdown = analyze_job_like(profile, job, db, cached_skills=cached_skills)
+        job["matched_skills"] = breakdown.get("matched_skills", [])[:4]
+        job["missing_skills"] = [m["skill"] if isinstance(m, dict) else m
+                                 for m in breakdown.get("missing_skill_details", [])[:3]]
     results["data"].sort(key=lambda x: x.get("match_score", 0), reverse=True)
     return results
 
@@ -244,7 +245,13 @@ async def get_jsearch_job(
         raise HTTPException(status_code=404, detail="Job not found or API unavailable")
 
     detail = _apply_match_scores({"data": [detail]}, user, db)
-    return detail["data"][0]
+    result = detail["data"][0]
+    # Full explainable breakdown for the job-detail page ("Why this job?" panel)
+    if user:
+        result["match_breakdown"] = analyze_job_like(
+            db.query(Profile).filter(Profile.user_id == user.id).first(), detail, db
+        )
+    return result
 
 
 @router.get("/similar/{job_id}")

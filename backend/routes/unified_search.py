@@ -162,8 +162,15 @@ def _local_search(
             ).first() is not None
 
         match_score = 0.0
+        matched = []
+        missing = []
         if profile:
             match_score = calculate_match_score(profile, job, db)
+            from services.matching_service import analyze_match
+            breakdown = analyze_match(profile, job, db)
+            matched = breakdown.get("matched_skills", [])[:4]
+            missing = [m["skill"] if isinstance(m, dict) else m
+                       for m in breakdown.get("missing_skill_details", [])[:3]]
 
         try:
             import json
@@ -184,6 +191,8 @@ def _local_search(
             "employment_type": job.employment_type,
             "skills": skills,
             "match_score": match_score,
+            "matched_skills": matched,
+            "missing_skills": missing,
             "posted_at": job.posted_at.isoformat(),
             "is_saved": is_saved,
             "is_applied": is_applied,

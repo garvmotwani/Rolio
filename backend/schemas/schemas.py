@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List, Union
 from datetime import datetime
 
 
@@ -217,6 +217,8 @@ class JobResponse(BaseModel):
     company_logo: str = ""
     company_industry: str = ""
     match_score: float = 0.0
+    matched_skills: List[str] = []
+    missing_skills: List[str] = []
     is_saved: bool = False
     is_applied: bool = False
     class Config:
@@ -331,7 +333,7 @@ class NotificationResponse(BaseModel):
 
 # AI schemas
 class AIMatchRequest(BaseModel):
-    job_id: int
+    job_id: Union[int, str] = Field(..., description="Numeric local job id, or prefixed external id (jsearch_/remotive_/jobicy_)")
 
 class AIResponse(BaseModel):
     response: str
