@@ -135,6 +135,7 @@ class ProfileUpdate(BaseModel):
     preferred_roles: Optional[str] = None
     preferred_locations: Optional[str] = None
     preferred_work_type: Optional[str] = None
+    target_role: Optional[str] = None
     salary_expectation_min: Optional[int] = None
     salary_expectation_max: Optional[int] = None
 
@@ -144,6 +145,8 @@ class ProfileUpdate(BaseModel):
             val = getattr(self, field, None)
             if val and len(val) > 500:
                 setattr(self, field, val[:500])
+        if self.target_role and len(self.target_role) > 200:
+            self.target_role = self.target_role[:200]
         if self.bio and len(self.bio) > 5000:
             self.bio = self.bio[:5000]
         if self.preferred_roles and len(self.preferred_roles) > 1000:
@@ -169,6 +172,7 @@ class OnboardingData(BaseModel):
     salary_expectation_min: Optional[int] = None
     salary_expectation_max: Optional[int] = None
     bio: Optional[str] = None
+    target_role: Optional[str] = None
 
 class ProfileResponse(BaseModel):
     id: int
@@ -184,6 +188,7 @@ class ProfileResponse(BaseModel):
     preferred_work_type: str
     salary_expectation_min: int
     salary_expectation_max: int
+    target_role: str = ""
     completeness_score: float
     skills: List[SkillResponse] = []
     experiences: List[ExperienceResponse] = []
@@ -250,6 +255,8 @@ class ApplicationCreate(BaseModel):
     job_id: int | str
     notes: str = ""
     external_url: str = ""
+    # Optional: which resume version was used (enables per-resume analytics).
+    resume_id: Optional[int] = None
 
     def model_post_init(self, __context):
         if self.notes and len(self.notes) > 5000:

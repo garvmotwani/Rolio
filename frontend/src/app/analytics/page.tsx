@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore, apiGet } from '@/lib/store';
 import { motion } from 'framer-motion';
-import { TrendingUp, Target, Briefcase, CheckCircle2, XCircle, Bookmark, Activity, Sparkles } from 'lucide-react';
+import { TrendingUp, Target, Briefcase, CheckCircle2, XCircle, Bookmark, Activity, Sparkles, FileText } from 'lucide-react';
 import FloatingOrbs from '@/components/FloatingOrbs';
 
 interface AnalyticsData {
@@ -48,6 +48,22 @@ interface RoadmapData {
   steps: { skill: string; jobs_missing: number; avg_readiness_gain: number; priority: number }[];
 }
 
+interface ResumePerfData {
+  versions: {
+    resume_id: number;
+    filename: string;
+    uploaded_at: string | null;
+    applications: number;
+    responses: number;
+    interviews: number;
+    offers: number;
+    response_rate: number;
+    interview_rate: number;
+  }[];
+  unattributed: number;
+  sample_caveat: string;
+}
+
 export default function AnalyticsPage() {
   const { user, hydrated } = useAuthStore();
   const router = useRouter();
@@ -55,6 +71,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(90);
   const [roadmap, setRoadmap] = useState<RoadmapData | null>(null);
+  const [resumePerf, setResumePerf] = useState<ResumePerfData | null>(null);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -69,6 +86,7 @@ export default function AnalyticsPage() {
       setData(d);
       // Non-fatal: roadmap section hides if unavailable
       apiGet<RoadmapData>('/api/analytics/career-roadmap').then(setRoadmap).catch(() => setRoadmap(null));
+      apiGet<ResumePerfData>('/api/analytics/resume-performance').then(setResumePerf).catch(() => setResumePerf(null));
     } catch (err) {
       console.error(err);
     } finally {
@@ -227,6 +245,46 @@ export default function AnalyticsPage() {
                   </motion.div>
                 ))}
               </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ─── Resume Performance (per-version response rates) ─── */}
+        {resumePerf && resumePerf.versions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18 }}
+            className="bg-[#050505] border border-white/[0.05] rounded-xl p-6 mb-6"
+          >
+            <h3 className="text-sm font-semibold mb-1">Resume performance</h3>
+            <p className="text-[11px] text-white/25 mb-4">{resumePerf.sample_caveat}</p>
+            <div className="space-y-2">
+              {resumePerf.versions.map((v) => (
+                <div key={v.resume_id} className="flex items-center gap-4 py-2 px-2 rounded-lg hover:bg-white/[0.02] transition-colors">
+                  <FileText size={14} className="text-white/30 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] text-white/70 truncate">{v.filename}</p>
+                    <p className="text-[10px] text-white/25">
+                      {v.applications} application{v.applications !== 1 ? 's' : ''}
+                      {v.offers > 0 && ` · ${v.offers} offer${v.offers !== 1 ? 's' : ''}`}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-[13px] font-mono text-white/70">{v.response_rate}%</p>
+                    <p className="text-[10px] text-white/25 uppercase tracking-wider">response</p>
+                  </div>
+                  <div className="text-right flex-shrink-0 w-16">
+                    <p className="text-[13px] font-mono text-white/70">{v.interview_rate}%</p>
+                    <p className="text-[10px] text-white/25 uppercase tracking-wider">interview</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {resumePerf.unattributed > 0 && (
+              <p className="text-[10px] text-white/20 mt-3">
+                +{resumePerf.unattributed} application{resumePerf.unattributed !== 1 ? 's' : ''} without a linked resume
+              </p>
             )}
           </motion.div>
         )}

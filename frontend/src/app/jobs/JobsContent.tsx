@@ -225,7 +225,7 @@ export default function JobsContent() {
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="Job title, skill, or company..."
+                placeholder="Try “internships in Bangalore using Python” or job title, skill..."
                 className="pl-9 pr-4"
               />
               {showSuggestions && suggestions.length > 0 && (

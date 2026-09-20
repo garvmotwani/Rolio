@@ -111,7 +111,8 @@ def get_career_roadmap(
     if not profile:
         return {"target_role": role, "has_profile": False, "steps": []}
 
-    target = (role or profile.title or "").strip()
+    # Priority: explicit ?role= > profile.target_role > profile.title > first preferred role
+    target = (role or profile.target_role or profile.title or "").strip()
     if not target:
         try:
             import json as _json
@@ -373,4 +374,192 @@ def get_dashboard_analytics(
         "profile_skills": profile_skills,
         "company_distribution": company_distribution,
         "recent_activity": recent_activity,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════
+# Activity feed — "What changed?" (dashboard question #4)
+# Cursor-based: frontend passes ?since=<ISO date> of its last visit.
+# ════════════════════════════════════════════════════════════════════
+
+@router.get("/activity")
+def get_activity_feed(
+    since: Optional[str] = Query(None, max_length=40, description="ISO timestamp of last visit"),
+    limit: int = Query(20, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Everything new for this user since `since`: application events
+    (status changes, email detections, applies), plus new strong matches.
+    Ordered newest-first. `since` is clamped to 30 days back max."""
+    from models.email_models import ApplicationEvent, EmailMessage
+    from models.models import SavedJob
+    import json as _json
+
+    cutoff = None
+    if since:
+        try:
+            cutoff = datetime.fromisoformat(since.replace("Z", "+00:00")).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            cutoff = None
+    if cutoff is None or cutoff < datetime.utcnow() - timedelta(days=30):
+        # No cursor or stale cursor → default to last 7 days (bounded feed)
+        cutoff = datetime.utcnow() - timedelta(days=7)
+
+    events = []
+
+    # 1. Application events (applies, status changes, email detections)
+    app_events = db.query(ApplicationEvent).filter(
+        ApplicationEvent.user_id == user.id,
+        ApplicationEvent.created_at >= cutoff,
+    ).order_by(ApplicationEvent.created_at.desc()).limit(limit).all()
+
+    app_ids = {e.application_id for e in app_events}
+    apps = db.query(Application).filter(Application.id.in_(app_ids)).all() if app_ids else []
+    job_ids = {a.job_id for a in apps}
+    jobs = db.query(Job).filter(Job.id.in_(job_ids)).all() if job_ids else []
+    company_ids = {j.company_id for j in jobs if j.company_id}
+    companies = db.query(Company).filter(Company.id.in_(company_ids)).all() if company_ids else []
+    job_map = {j.id: j for j in jobs}
+    app_map = {a.id: a for a in apps}
+    company_map = {c.id: c for c in companies}
+
+    for e in app_events:
+        app = app_map.get(e.application_id)
+        job = job_map.get(app.job_id) if app else None
+        company = company_map.get(job.company_id) if job and job.company_id else None
+        kind = e.event_type  # applied | status_change | email_received
+        icon = {
+            "applied": "applied",
+            "status_change": "status",
+            "email_received": "email",
+        }.get(kind, "info")
+        events.append({
+            "id": f"ev-{e.id}",
+            "type": icon,
+            "title": e.title or kind.replace("_", " ").title(),
+            "description": e.description or "",
+            "detail": e.new_value or "",
+            "job_title": job.title if job else "",
+            "company_name": company.name if company else "",
+            "job_id": job.id if job else None,
+            "created_at": e.created_at.isoformat(),
+        })
+
+    # 2. New strong matches (score >= 60) — re-scored at read time so the
+    #    feed reflects the profile's CURRENT skills, not stale scores.
+    try:
+        profile = db.query(Profile).filter(Profile.user_id == user.id).first()
+        if profile and profile.skills:
+            profile_skills = [s.name for s in profile.skills]
+            candidate_jobs = db.query(Job).filter(Job.is_active == True).order_by(
+                Job.posted_at.desc().nullslast()
+            ).limit(80).all()
+            for job in candidate_jobs:
+                if not job.posted_at or job.posted_at < cutoff:
+                    continue
+                if not job.title:
+                    continue
+                score = score_job(profile, job, db, cached_skills=profile_skills)
+                if score >= 60:
+                    events.append({
+                        "id": f"job-{job.id}",
+                        "type": "match",
+                        "title": f"New {int(score)}% match",
+                        "description": "",
+                        "detail": f"{score:.0f}%",
+                        "job_title": job.title,
+                        "company_name": "",
+                        "job_id": job.id,
+                        "created_at": job.posted_at.isoformat(),
+                        "score": result.score,
+                    })
+    except Exception:
+        # Matching failure must never break the feed — events so far still return
+        pass
+
+    # Merge by created_at desc, trim to limit
+    events.sort(key=lambda x: x["created_at"], reverse=True)
+    events = events[:limit]
+
+    return {
+        "events": events,
+        "cutoff": cutoff.isoformat(),
+        "count": len(events),
+    }
+
+
+# ═════════════════════════════════════════════ `since` cursor updates
+
+@router.post("/activity/seen")
+def mark_activity_seen(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark "now" as the user's last-seen cursor (server-side, cross-device)."""
+    user.last_seen_at = datetime.utcnow()
+    db.commit()
+    return {"message": "ok"}
+
+
+# ════════════════════════════════════════════════════════════════════
+# Per-resume performance (spec §21): which resume version performs best?
+# Descriptive statistics only — never claims causality.
+# ════════════════════════════════════════════════════════════════════
+
+@router.get("/resume-performance")
+def get_resume_performance(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Applications + outcomes grouped by the resume used. Small-sample
+    caveat is included so the UI can label honestly."""
+    from models.models import Resume
+
+    rows = db.query(
+        Application.resume_id,
+        func.count(Application.id).label("total"),
+        func.sum(case((Application.status.in_(["screening", "interview", "offer"]), 1), else_=0)).label("responses"),
+        func.sum(case((Application.status.in_(["interview", "offer"]), 1), else_=0)).label("interviews"),
+        func.sum(case((Application.status == "offer", 1), else_=0)).label("offers"),
+    ).filter(
+        Application.user_id == user.id,
+        Application.resume_id.isnot(None),
+    ).group_by(Application.resume_id).all()
+
+    resume_ids = [r[0] for r in rows]
+    resumes = db.query(Resume).filter(Resume.id.in_(resume_ids)).all() if resume_ids else []
+    resume_map = {r.id: r for r in resumes}
+
+    versions = []
+    for r in rows:
+        resume = resume_map.get(r.resume_id)
+        total = r.total or 0
+        responses = r.responses or 0
+        interviews = r.interviews or 0
+        offers = r.offers or 0
+        versions.append({
+            "resume_id": r.resume_id,
+            "filename": resume.filename if resume else "(deleted)",
+            "uploaded_at": resume.uploaded_at.isoformat() if resume and resume.uploaded_at else None,
+            "applications": total,
+            "responses": responses,
+            "interviews": interviews,
+            "offers": offers,
+            "response_rate": round(responses / total * 100, 1) if total else 0.0,
+            "interview_rate": round(interviews / total * 100, 1) if total else 0.0,
+        })
+
+    # Sort by application count desc (most-used resume first)
+    versions.sort(key=lambda v: v["applications"], reverse=True)
+
+    unattributed = db.query(func.count(Application.id)).filter(
+        Application.user_id == user.id,
+        Application.resume_id.is_(None),
+    ).scalar() or 0
+
+    return {
+        "versions": versions,
+        "unattributed": unattributed,
+        "sample_caveat": "Descriptive only — differences may reflect job mix, not resume quality.",
     }

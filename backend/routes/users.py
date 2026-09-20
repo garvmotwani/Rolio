@@ -90,6 +90,8 @@ def complete_onboarding(
         profile.preferred_locations = data.preferred_locations
     if data.preferred_work_type:
         profile.preferred_work_type = data.preferred_work_type
+    if data.target_role:
+        profile.target_role = data.target_role
     if data.salary_expectation_min:
         profile.salary_expectation_min = data.salary_expectation_min
     if data.salary_expectation_max:

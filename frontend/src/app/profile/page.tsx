@@ -28,6 +28,7 @@ interface Profile {
   preferred_roles: string;
   preferred_locations: string;
   preferred_work_type: string;
+  target_role: string;
   salary_expectation_min: number;
   salary_expectation_max: number;
   completeness_score: number;
@@ -95,6 +96,7 @@ export default function ProfilePage() {
         linkedin_url: p.linkedin_url || '', github_url: p.github_url || '',
         portfolio_url: p.portfolio_url || '', preferred_roles: p.preferred_roles || '',
         preferred_locations: p.preferred_locations || '', preferred_work_type: p.preferred_work_type || 'hybrid',
+        target_role: p.target_role || '',
         salary_expectation_min: p.salary_expectation_min || 0,
         salary_expectation_max: p.salary_expectation_max || 0,
       });
@@ -272,16 +274,23 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
+                      <label className="block text-[11px] text-white/25 mb-1.5 uppercase tracking-wider">Preferred Roles</label>
+                      <input value={editForm.preferred_roles} onChange={(e) => setEditForm({ ...editForm, preferred_roles: e.target.value })} placeholder="Software Engineer, Full Stack..." />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-white/25 mb-1.5 uppercase tracking-wider">Target Role</label>
+                      <input value={editForm.target_role} onChange={(e) => setEditForm({ ...editForm, target_role: e.target.value })} placeholder="e.g. Backend Engineer" />
+                      <p className="text-[10px] text-white/20 mt-1">Drives your career roadmap & skill-gap analysis</p>
+                    </div>
+                    <div>
                       <label className="block text-[11px] text-white/25 mb-1.5 uppercase tracking-wider">Work Type</label>
                       <select value={editForm.preferred_work_type} onChange={(e) => setEditForm({ ...editForm, preferred_work_type: e.target.value })}>
                         <option value="remote">Remote</option>
                         <option value="hybrid">Hybrid</option>
                         <option value="on-site">On-site</option>
                       </select>
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-[11px] text-white/25 mb-1.5 uppercase tracking-wider">Preferred Roles</label>
-                      <input value={editForm.preferred_roles} onChange={(e) => setEditForm({ ...editForm, preferred_roles: e.target.value })} placeholder="Software Engineer, Full Stack..." />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">

@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, Loader2, CheckCircle, ArrowRight } from 'lucide-react';
+import { X, ExternalLink, Loader2, CheckCircle, ArrowRight, FileText } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import { apiPost } from '@/lib/api';
+import { apiPost, apiGet } from '@/lib/api';
 import { useToast } from './Toast';
 
 interface ApplyModalProps {
@@ -18,12 +18,31 @@ interface ApplyModalProps {
 }
 
 
+interface ResumeOption { id: number; filename: string; uploaded_at: string; }
+
 export default function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyName, applicationUrl, onApplied }: ApplyModalProps) {
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isApplied, setIsApplied] = useState(false);
+  const [resumes, setResumes] = useState<ResumeOption[]>([]);
+  const [resumeId, setResumeId] = useState<number | null>(null);
   const user = useAuthStore(s => s.user);
   const { addToast } = useToast();
+
+  // Load the current resume when the modal opens — attributing applications
+  // to a resume version enables per-version response-rate analytics.
+  // Failure is silent — resume attribution is optional.
+  useEffect(() => {
+    if (!isOpen) return;
+    apiGet<{ resume: (ResumeOption & Record<string, unknown>) | null }>('/api/resume')
+      .then((r) => {
+        if (r.resume) {
+          setResumes([r.resume]);
+          setResumeId(r.resume.id);
+        }
+      })
+      .catch(() => {});
+  }, [isOpen]);
 
   const handleApply = async () => {
     if (!user) return;
@@ -35,6 +54,7 @@ export default function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyNa
         job_id: jobId,
         notes: notes || undefined,
         external_url: applicationUrl || undefined,
+        resume_id: resumeId || undefined,
       });
       setIsApplied(true);
       addToast(`Applied to ${jobTitle} at ${companyName}`, 'success');
@@ -108,6 +128,35 @@ export default function ApplyModal({ isOpen, onClose, jobId, jobTitle, companyNa
                         className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-3.5 py-2.5 text-sm text-white/80 placeholder:text-white/20 outline-none focus:border-white/15 transition-colors resize-none"
                       />
                     </div>
+
+                    {resumes.length > 0 && (
+                      <div>
+                        <label className="text-[11px] text-white/40 uppercase tracking-wider block mb-1.5">
+                          Resume used
+                        </label>
+                        <div className="space-y-1.5">
+                          {resumes.map((r) => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => setResumeId(r.id)}
+                              className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-left transition-all ${
+                                resumeId === r.id
+                                  ? 'border-white/25 bg-white/[0.06]'
+                                  : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04]'
+                              }`}
+                            >
+                              <FileText size={14} className={resumeId === r.id ? 'text-white/80' : 'text-white/30'} />
+                              <span className="text-sm text-white/70 truncate flex-1">{r.filename}</span>
+                              {resumeId === r.id && <CheckCircle size={14} className="text-white/60 flex-shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-white/20 mt-1.5">
+                          Tracks which version performs best across your applications
+                        </p>
+                      </div>
+                    )}
 
                     <div className="flex gap-3">
                       {applicationUrl && (

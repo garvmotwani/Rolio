@@ -21,6 +21,7 @@ from models.models import User, Job, Company, SavedJob, Application, Profile, Se
 from utils.auth import get_optional_user, get_current_user
 from utils.rate_limiter import get_rate_limiter
 from services.matching_service import calculate_match_score
+from services.nl_search import parse_query
 from services.jsearch_service import search_jobs as jsearch_search, get_search_summary, JSEARCH_CONFIGURED
 from services.free_job_boards import search_free_boards, normalize_for_unified
 
@@ -396,6 +397,20 @@ async def unified_search(
     profile = None
     if user_id:
         profile = db.query(Profile).filter(Profile.user_id == user_id).first()
+
+    # ─── Natural-language parsing (deterministic, no LLM) ─────
+    # "backend internships in Bangalore using Python" → structured filters.
+    # Explicit filter params always win over NL-extracted values.
+    nl = parse_query(q)
+    if nl["location"] and not location:
+        location = nl["location"]
+    if nl["work_type"] and not work_type:
+        work_type = nl["work_type"]
+    if nl["experience_level"] and not experience_level:
+        experience_level = nl["experience_level"]
+    if nl["remote"]:
+        remote = True
+    q = nl["keywords"]  # remaining terms become the keyword query
 
     # External legs run when there's a query OR a location (e.g. "bangalore"
     # with the keyword box empty should still find real jobs there).

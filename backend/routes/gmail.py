@@ -592,6 +592,43 @@ def sync_emails(user: User = Depends(get_current_user), db: Session = Depends(ge
         raise HTTPException(status_code=500, detail="Sync failed. Please try again later.")
 
 
+@router.post("/auto-sync")
+def auto_sync_if_stale(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fire-and-forget background sync trigger, called by the dashboard on
+    load. Runs the real sync only when: connected, not already running, and
+    the last successful sync is older than SYNC_STALE_MINUTES (60).
+    Cheap no-op otherwise — safe to call on every dashboard visit."""
+    SYNC_STALE_MINUTES = 60
+
+    token = db.query(GmailToken).filter(
+        GmailToken.user_id == user.id, GmailToken.is_active == True
+    ).first()
+    if not token:
+        return {"synced": False, "reason": "not_connected"}
+
+    last_sync = db.query(EmailSyncLog).filter(
+        EmailSyncLog.user_id == user.id
+    ).order_by(EmailSyncLog.started_at.desc()).first()
+
+    if last_sync and last_sync.status == "running":
+        # Another sync (from any device/tab) is in flight — don't duplicate
+        return {"synced": False, "reason": "already_running"}
+
+    if last_sync and last_sync.completed_at:
+        age_min = (datetime.utcnow() - last_sync.completed_at).total_seconds() / 60
+        if age_min < SYNC_STALE_MINUTES:
+            return {"synced": False, "reason": "fresh", "age_minutes": round(age_min)}
+
+    # Run the same sync logic inline (fast: ≤50 message metadata fetches).
+    # The dashboard calls this without awaiting the result, so latency there
+    # is unaffected.
+    result = sync_emails(user=user, db=db)
+    return {"synced": True, "result": result}
+
+
 @router.get("/messages")
 def get_email_messages(
     application_id: int = None,

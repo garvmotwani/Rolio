@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
+import json
 
 from database.connection import get_db
-from models.models import Application, Job, Company, User
+from models.models import Application, Job, Company, User, Resume
 from schemas.schemas import ApplicationCreate, ApplicationUpdate
 from utils.auth import get_current_user
+from models.email_models import ApplicationEvent
 
 router = APIRouter(prefix="/api", tags=["applications"])
 
@@ -82,16 +84,42 @@ async def create_application(
     if existing:
         raise HTTPException(status_code=400, detail="Already applied to this job")
 
+    # Ownership check: a client-supplied resume_id must belong to this user
+    # (prevents cross-user references / probing other users' resume IDs).
+    resume_filename = ""
+    if data.resume_id is not None:
+        owns_resume = db.query(Resume).filter(
+            Resume.id == data.resume_id, Resume.user_id == user.id
+        ).first()
+        if not owns_resume:
+            raise HTTPException(status_code=400, detail="Invalid resume")
+        resume_filename = owns_resume.filename
+
     app = Application(
         user_id=user.id,
         job_id=data.job_id,
         status="applied",
         notes=data.notes,
         external_url=data.external_url,
+        resume_id=data.resume_id,
     )
     db.add(app)
     db.commit()
     db.refresh(app)
+
+    # Timeline event so the activity feed and application history show the
+    # resume version used at apply time.
+    db.add(ApplicationEvent(
+        application_id=app.id, user_id=user.id,
+        event_type="applied",
+        title="Application submitted",
+        new_value="applied",
+        metadata_json=(
+            f'{{"resume_id": {data.resume_id}, '
+            f'"resume_filename": {json.dumps(resume_filename)}}}'
+        ),
+    ))
+    db.commit()
 
     return {"message": "Application created", "id": app.id}
 

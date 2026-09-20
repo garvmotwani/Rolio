@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useAuthStore, apiGet } from '@/lib/store';
+import { useAuthStore, apiGet, apiPost } from '@/lib/store';
 import { motion, useInView } from 'framer-motion';
 import {
   Target, FileText, Users, TrendingUp,
@@ -51,6 +51,31 @@ interface GapResponse {
   gaps: GapEntry[];
   jobs_analyzed: number;
   strong_matches: number;
+}
+
+interface ActivityEvent {
+  id: string;
+  type: 'applied' | 'status' | 'email' | 'match';
+  title: string;
+  description: string;
+  detail: string;
+  job_title: string;
+  company_name: string;
+  job_id: number | null;
+  created_at: string;
+}
+
+const LAST_SEEN_KEY = 'rolio_last_seen';
+
+function timeAgo(iso: string): string {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
 }
 
 const container = {
@@ -103,6 +128,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [gaps, setGaps] = useState<GapEntry[]>([]);
   const [gapStats, setGapStats] = useState({ jobs_analyzed: 0, strong_matches: 0 });
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -119,6 +145,25 @@ export default function DashboardPage() {
           setGapStats({ jobs_analyzed: g.jobs_analyzed || 0, strong_matches: g.strong_matches || 0 });
         })
         .catch(() => {});
+
+      // Activity feed — "What changed since my last visit?" Cursor is the
+      // last-seen timestamp from localStorage (updated after each fetch).
+      // Fire-and-forget alongside the main dashboard payload.
+      const since = typeof window !== 'undefined' ? localStorage.getItem(LAST_SEEN_KEY) || '' : '';
+      apiGet<{ events: ActivityEvent[] }>(
+        `/api/analytics/activity${since ? `?since=${encodeURIComponent(since)}` : ''}`
+      )
+        .then((a) => {
+          setActivity(a.events || []);
+          localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
+        })
+        .catch(() => {});
+
+      // Gmail auto-sync: fire-and-forget, backend no-ops when fresh/not
+      // connected/already running. Keeps "What happened after I applied?"
+      // current without a manual sync button.
+      apiPost('/api/gmail/auto-sync', {}).catch(() => {});
+
       const result = await apiGet<DashboardData>('/api/dashboard');
       setData(result);
     } catch (err) {
@@ -280,6 +325,23 @@ export default function DashboardPage() {
             </motion.div>
 
             {/* Recent Applications */}
+            {activity.length > 0 && (
+              <motion.div variants={item}>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold">What's new</h2>
+                  <Link href="/applications" className="text-xs text-white/25 hover:text-white/50 flex items-center gap-1 transition-colors duration-200">
+                    Applications <ChevronRight size={12} />
+                  </Link>
+                </div>
+                <div className="space-y-2">
+                  {activity.slice(0, 5).map((ev) => (
+                    <ActivityRow key={ev.id} ev={ev} />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Recent Applications (existing list) */}
             {data.recent_applications.length > 0 && (
               <motion.div variants={item}>
                 <div className="flex items-center justify-between mb-4">
@@ -470,4 +532,47 @@ export default function DashboardPage() {
     </div>
     </ErrorBoundary>
   );
+}
+
+function ActivityRow({ ev }: { ev: ActivityEvent }) {
+  const iconMap = {
+    applied: FileText,
+    status: TrendingUp,
+    email: Users,
+    match: Target,
+  };
+  const Icon = iconMap[ev.type] || Zap;
+  const label = {
+    applied: 'Applied',
+    status: 'Status update',
+    email: 'Email detected',
+    match: 'New match',
+  }[ev.type] || 'Update';
+
+  const inner = (
+    <div className="flex items-center gap-3 bg-[#050505] border border-white/[0.04] hover:border-white/[0.08] rounded-xl p-4 transition-all duration-300">
+      <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center flex-shrink-0">
+        <Icon size={13} className="text-white/40" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-white/70 truncate">
+          {ev.job_title || ev.title}
+          {ev.company_name && <span className="text-white/30"> · {ev.company_name}</span>}
+        </p>
+        <p className="text-[11px] text-white/25 truncate">
+          {label}
+          {ev.detail && ev.type !== 'match' && ` — ${ev.detail}`}
+        </p>
+      </div>
+      {ev.type === 'match' && ev.detail && (
+        <span className="text-xs font-mono text-white/50 flex-shrink-0">{ev.detail}</span>
+      )}
+      <span className="text-[10px] text-white/20 flex-shrink-0 w-14 text-right">{timeAgo(ev.created_at)}</span>
+    </div>
+  );
+
+  if (ev.job_id) {
+    return <Link href={`/jobs/${ev.job_id}`}>{inner}</Link>;
+  }
+  return inner;
 }

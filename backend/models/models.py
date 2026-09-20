@@ -47,6 +47,9 @@ class User(Base):
     email_verified = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True)
     is_onboarded = Column(Boolean, default=False)
+    # Cursor for the "What's new?" activity feed: server-side (works across
+    # devices) instead of localStorage. NULL = nothing seen yet.
+    last_seen_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -70,6 +73,9 @@ class Profile(Base):
     preferred_roles = Column(Text, default="")  # JSON array
     preferred_locations = Column(Text, default="")  # JSON array
     preferred_work_type = Column(String, default="hybrid")
+    # Single target role ("Backend Engineer") — drives the career roadmap and
+    # gap analysis defaults. Kept separate from preferred_roles (free list).
+    target_role = Column(String, default="")
     salary_expectation_min = Column(Integer, default=0)
     salary_expectation_max = Column(Integer, default=0)
     completeness_score = Column(Float, default=0.0)
@@ -229,6 +235,11 @@ class Application(Base):
     interview_date = Column(DateTime, nullable=True)
     external_url = Column(String, default="")
     match_score = Column(Float, default=0.0)
+    # Which resume version was used to apply — enables per-resume response
+    # rate analytics. Nullable: older applications and external applies.
+    # Index created explicitly in migration e9f2a4b6c8d1 (not index=True —
+    # a duplicate reflected index breaks SQLite batch migrations).
+    resume_id = Column(Integer, ForeignKey("resumes.id"), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
@@ -239,6 +250,7 @@ class Application(Base):
 
     user = relationship("User", back_populates="applications")
     job = relationship("Job")
+    resume = relationship("Resume")
 
 
 class SearchHistory(Base):
