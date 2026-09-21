@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Union
 from datetime import datetime
+from utils.url_validation import is_safe_url
 
 
 # Auth schemas
@@ -139,6 +140,15 @@ class ProfileUpdate(BaseModel):
     salary_expectation_min: Optional[int] = None
     salary_expectation_max: Optional[int] = None
 
+    # ── Stored-XSS defense: profile links render as href in the UI. Only
+    # http(s) is ever persisted — javascript:/data: URIs are rejected here.
+    @field_validator("linkedin_url", "github_url", "portfolio_url")
+    @classmethod
+    def _safe_profile_links(cls, v):
+        if v and not is_safe_url(v):
+            raise ValueError("Link must be a valid http(s) URL")
+        return v
+
     def model_post_init(self, __context):
         # Enforce max lengths
         for field in ['title', 'location', 'linkedin_url', 'github_url', 'portfolio_url']:
@@ -255,6 +265,13 @@ class ApplicationCreate(BaseModel):
     job_id: int | str
     notes: str = ""
     external_url: str = ""
+
+    @field_validator("external_url")
+    @classmethod
+    def _safe_external_url(cls, v):
+        if v and not is_safe_url(v):
+            raise ValueError("URL must be a valid http(s) URL")
+        return v
     # Optional: which resume version was used (enables per-resume analytics).
     resume_id: Optional[int] = None
 
@@ -269,6 +286,13 @@ class ApplicationUpdate(BaseModel):
     notes: Optional[str] = None
     interview_date: Optional[str] = None
     external_url: Optional[str] = None
+
+    @field_validator("external_url")
+    @classmethod
+    def _safe_external_url_update(cls, v):
+        if v and not is_safe_url(v):
+            raise ValueError("URL must be a valid http(s) URL")
+        return v
 
     def model_post_init(self, __context):
         ALLOWED_STATUSES = {"saved", "applied", "screening", "interview", "offer", "rejected", "withdrawn"}

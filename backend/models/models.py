@@ -251,6 +251,12 @@ class Application(Base):
     user = relationship("User", back_populates="applications")
     job = relationship("Job")
     resume = relationship("Resume")
+    # Timeline events die with their application (see ApplicationEvent).
+    # DB-level FK ON DELETE would be ideal; ORM cascade covers the app path.
+    events = relationship(
+        "ApplicationEvent", back_populates="application",
+        cascade="all, delete-orphan", passive_deletes=True,
+    )
 
 
 class SearchHistory(Base):

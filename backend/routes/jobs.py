@@ -287,6 +287,14 @@ async def _import_external_job(job_id: str, db: Session) -> Optional[Job]:
         db.flush()
 
     source = job_id.split("_", 1)[0]
+
+    # Stored-XSS defense: external-provider URLs are untrusted. A malicious
+    # listing could carry `javascript:...` as its apply URL — only http(s)
+    # is ever persisted (rendered as href in the frontend).
+    from utils.url_validation import sanitize_url_or_none
+    raw_apply_url = detail.get("application_url") or detail.get("apply_link", "")
+    safe_apply_url = sanitize_url_or_none(raw_apply_url) or ""
+
     job = Job(
         company_id=company.id if company else 0,
         title=detail.get("title", ""),
@@ -300,7 +308,7 @@ async def _import_external_job(job_id: str, db: Session) -> Optional[Job]:
         salary_max=detail.get("salary_max") or 0,
         experience_level=detail.get("experience_level", "mid"),
         employment_type=detail.get("employment_type", "full-time"),
-        application_url=detail.get("application_url") or detail.get("apply_link", ""),
+        application_url=safe_apply_url,
         source=source,
         external_id=job_id,
     )

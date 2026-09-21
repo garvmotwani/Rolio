@@ -2,7 +2,7 @@
 AI Resume Builder — Nemotron-powered, section-by-section for token efficiency.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -22,6 +22,7 @@ class ResumeRequest(BaseModel):
 
 
 class ResumeSectionRequest(BaseModel):
+    # Allowlist: prevents arbitrary strings flowing into prompt branching
     section: str  # "summary", "experience", "skills", "education", "full"
     job_id: Optional[int] = None
 
@@ -184,8 +185,14 @@ async def generate_section(data: ResumeSectionRequest, user: User = Depends(ai_r
 
 
 @router.post("/improve")
-async def improve_text(text: str, context: str = "resume bullet point", user: User = Depends(ai_rate_limit), db: Session = Depends(get_db)):
-    """Improve one bullet — ~60 tokens per call."""
+async def improve_text(
+    text: str = Query(max_length=1000),
+    context: str = Query(max_length=100),
+    user: User = Depends(ai_rate_limit),
+    db: Session = Depends(get_db),
+):
+    """Improve one bullet — ~60 tokens per call. Input bounds prevent
+    prompt-stuffing an expensive endpoint with arbitrary-size text."""
     prompt = (
         f"Improve this {context} to be ATS-friendly:\n"
         f"Original: {text}\n"

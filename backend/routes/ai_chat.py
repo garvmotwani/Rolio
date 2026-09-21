@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -20,10 +20,34 @@ class ChatMessage(BaseModel):
     role: str
     content: str
 
+    @field_validator("content")
+    @classmethod
+    def _bounded_content(cls, v):
+        if len(v) > 2000:
+            raise ValueError("History message too long (max 2000 characters)")
+        return v
+
 
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[ChatMessage]] = []
+
+    # Resource-exhaustion bounds: every char here becomes AI-provider tokens
+    # (cost/quota abuse). Prompt builder truncates to [:200] anyway — these
+    # caps reject absurd payloads before any processing.
+    @field_validator("message")
+    @classmethod
+    def _bounded_message(cls, v):
+        if len(v) > 2000:
+            raise ValueError("Message too long (max 2000 characters)")
+        return v
+
+    @field_validator("history")
+    @classmethod
+    def _bounded_history(cls, v):
+        if v and len(v) > 20:
+            raise ValueError("History too long (max 20 messages)")
+        return v
 
 
 class JobQuestionRequest(BaseModel):

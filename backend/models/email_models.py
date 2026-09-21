@@ -89,7 +89,9 @@ class ApplicationEvent(Base):
     """Timeline events for each application."""
     __tablename__ = "application_events"
     id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
+    # ondelete CASCADE: DB-level cleanup when an application is deleted
+    # (ORM cascade handles the session path; this covers raw deletes).
+    application_id = Column(Integer, ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     event_type = Column(String, nullable=False)
     title = Column(String, default="")
@@ -100,7 +102,9 @@ class ApplicationEvent(Base):
     metadata_json = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    application = relationship("Application", backref="events")
+    # Cascade is configured on the Application.events side (one-to-many);
+    # deleting an application removes its timeline events (ORM-level).
+    application = relationship("Application", back_populates="events")
     user = relationship("User")
     related_email = relationship("EmailMessage")
 

@@ -101,8 +101,8 @@ LOCATION_MULTIPLIERS = {
 
 @router.get("/benchmarks")
 def get_salary_benchmarks(
-    role: Optional[str] = Query(None),
-    location: Optional[str] = Query(None),
+    role: Optional[str] = Query(None, max_length=100),
+    location: Optional[str] = Query(None, max_length=100),
 ):
     """Get salary benchmarks by role and location (annual INR)."""
     roles = SALARY_BENCHMARKS.keys()
@@ -137,8 +137,8 @@ def get_salary_benchmarks(
 
 @router.get("/compare")
 def compare_salaries(
-    roles: str = Query("", description="Comma-separated roles"),
-    location: str = Query("", description="Location"),
+    roles: str = Query("", max_length=300, description="Comma-separated roles"),
+    location: str = Query("", max_length=100, description="Location"),
 ):
     """Compare salaries across multiple roles (annual INR)."""
     role_list = [r.strip() for r in roles.split(",") if r.strip()] if roles else list(SALARY_BENCHMARKS.keys())[:4]

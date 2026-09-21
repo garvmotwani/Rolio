@@ -47,6 +47,10 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs" if not IS_PRODUCTION else None,
     redoc_url=None,
+    # Schema JSON also disabled in production: it enumerates every route
+    # (paths, parameter shapes) for attackers. Endpoints remain secure
+    # regardless — this reduces recon surface, not the actual control.
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
 
 
