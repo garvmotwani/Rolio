@@ -3,13 +3,12 @@ JSearch API service — fetches real job listings from Google for Jobs via Rapid
 Includes caching, rate limiting, and smart deduplication.
 """
 
-import os
 import json
 import time
 import hashlib
 import logging
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from config import JSEARCH_API_KEY
 
 logger = logging.getLogger("rolio.jsearch")

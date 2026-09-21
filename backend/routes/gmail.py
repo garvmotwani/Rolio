@@ -11,8 +11,6 @@ Security measures:
 - Disconnect revokes tokens and cleans up data.
 """
 from __future__ import annotations  # 3.9-compatible `X | None` annotations (Vercel runtime may default to 3.9)
-import os
-import json
 import base64
 import re
 import secrets
@@ -20,7 +18,7 @@ import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow

@@ -22,7 +22,7 @@ from utils.auth import get_optional_user, get_current_user
 from utils.rate_limiter import get_rate_limiter
 from services.matching_service import calculate_match_score
 from services.nl_search import parse_query
-from services.jsearch_service import search_jobs as jsearch_search, get_search_summary, JSEARCH_CONFIGURED
+from services.jsearch_service import search_jobs as jsearch_search, JSEARCH_CONFIGURED
 from services.free_job_boards import search_free_boards, normalize_for_unified
 
 router = APIRouter(prefix="/api/search", tags=["unified-search"])
@@ -125,7 +125,7 @@ def _local_search(
     q: str, location: str, work_type: Optional[str], experience_level: Optional[str],
     salary_min: Optional[int], salary_max: Optional[int],
     page: int, per_page: int, user_id: Optional[int], profile,
-    db: Session,
+    db: Session, want_remote: bool = False,
 ) -> tuple[list[dict], int]:
     """Run local database search. Returns (results, total_count)."""
     q_db = db.query(Job).filter(Job.is_active == True)
@@ -164,6 +164,12 @@ def _local_search(
 
     if work_type:
         q_db = q_db.filter(Job.work_type == work_type)
+
+    if want_remote:
+        # Remote requested (checkbox or "remote ..." in the query): keep jobs
+        # tagged remote OR offering remote locations. Combined with work_type
+        # above this supports "remote internships" = both constraints.
+        q_db = q_db.filter(or_(Job.work_type == "remote", Job.location.ilike("%remote%")))
 
     # For internships, also match "intern" in title
     if experience_level == "intern":
@@ -244,6 +250,7 @@ async def _jsearch_search(
     q: str, location: Optional[str], work_type: Optional[str],
     experience_level: Optional[str], date_posted: Optional[str],
     page: int, user_id: Optional[int], profile, db: Session,
+    want_remote: bool = False,
 ) -> tuple[list[dict], int]:
     """Run JSearch real-time search. Returns (results, total_count)."""
     is_internship = _detect_internship_from_query(q) or experience_level == "intern"
@@ -256,7 +263,7 @@ async def _jsearch_search(
     if loc_lower in ("bengaluru", "bengaluru, india"):
         location = "bangalore"
 
-    remote_flag = work_type == "remote" if work_type else False
+    remote_flag = want_remote or (work_type == "remote" if work_type else False)
 
     try:
         js_results = await jsearch_search(
@@ -408,8 +415,9 @@ async def unified_search(
         work_type = nl["work_type"]
     if nl["experience_level"] and not experience_level:
         experience_level = nl["experience_level"]
-    if nl["remote"]:
-        remote = True
+    # Remote is orthogonal to work_type ("remote internships" = both), so it
+    # stays a separate flag threaded through every search leg.
+    want_remote = remote or nl["remote"]
     q = nl["keywords"]  # remaining terms become the keyword query
 
     # External legs run when there's a query OR a location (e.g. "bangalore"
@@ -425,11 +433,12 @@ async def unified_search(
     local_task = asyncio.to_thread(
         _local_search, q, location, work_type, experience_level,
         salary_min, salary_max, page, per_page, user_id, profile, db,
+        want_remote,
     )
 
     jsearch_task = asyncio.create_task(
         _jsearch_search(q or location, location, work_type, experience_level,
-                        date_posted, page, user_id, profile, db)
+                        date_posted, page, user_id, profile, db, want_remote)
     ) if (external_trigger and q) else None
 
     free_task = asyncio.create_task(

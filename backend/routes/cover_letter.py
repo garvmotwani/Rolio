@@ -3,17 +3,14 @@ Cover Letter Generator — AI-powered cover letters tailored to specific jobs.
 Uses Nemotron with compact prompts for token efficiency.
 """
 
-import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
 
 from database.connection import get_db
 from models.models import User, Profile, Skill, Job, Company, Experience
-from utils.auth import get_current_user
 from utils.ai_rate_limit import ai_rate_limit
 
 router = APIRouter(prefix="/api/cover-letter", tags=["cover-letter"])

@@ -10,20 +10,22 @@ Security design:
 - Cookie Secure flag is environment-aware (False for localhost dev, True for production).
 """
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import secrets
-import hashlib
 
 # PyJWT (python-jose is unmaintained with unpatched advisories). PyJWTError
 # is the base class matching jose's JWTError role for our HS256 usage.
 import jwt as pyjwt
 from jwt import PyJWTError as JWTError
 from passlib.context import CryptContext
+
+if TYPE_CHECKING:
+    from models.session import RefreshSession
 from fastapi import Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session as DBSession
 
 from config import (
-    SECRET_KEY, CSRF_SECRET, ALGORITHM,
+    SECRET_KEY, ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
     IS_PRODUCTION,
 )
@@ -212,7 +214,6 @@ def revoke_refresh_session(db: DBSession, token_hash: str, replaced_by_id: int =
 def revoke_all_user_sessions(db: DBSession, user_id: int) -> int:
     """Revoke all active sessions for a user. Returns count of revoked sessions."""
     from models.session import RefreshSession
-    from sqlalchemy import and_
     count = db.query(RefreshSession).filter(
         RefreshSession.user_id == user_id,
         RefreshSession.revoked_at.is_(None),

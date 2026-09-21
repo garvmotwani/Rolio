@@ -2,12 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from models.models import User, Profile, Job, Skill
+from models.models import User, Profile, Job
 from schemas.schemas import AIMatchRequest, AICareerAdviceRequest
-from utils.auth import get_current_user
 from utils.ai_rate_limit import ai_rate_limit
 from services.matching_service import (
-    get_match_breakdown,
     analyze_match,
     analyze_job_like,
     EXTERNAL_PREFIXES,

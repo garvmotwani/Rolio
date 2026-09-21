@@ -4,8 +4,7 @@ import random
 
 from database.connection import engine, SessionLocal, Base
 from models.models import (
-    User, Profile, Skill, Experience, Education, Project,
-    Company, Job, Resume, SavedJob, Application, Notification,
+    User, Profile, Skill, Experience, Education, Company, Job, Application,
 )
 from utils.auth import get_password_hash
 

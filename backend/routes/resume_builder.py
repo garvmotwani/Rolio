@@ -10,7 +10,6 @@ import json
 
 from database.connection import get_db
 from models.models import User, Profile, Skill, Experience, Education
-from utils.auth import get_current_user
 from utils.ai_rate_limit import ai_rate_limit
 from services.ai_provider import call_ai, build_resume_prompt, build_section_prompt
 

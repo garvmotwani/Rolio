@@ -139,7 +139,6 @@ def _skill_factor(profile_skills: list, job_required: list, job_preferred: list)
         return 1.0, False, {"matched": [], "missing": [], "job_skills": []}
 
     matched, missing_raw, partial = overlap_sets(profile_skills, all_job)
-    job_set = set(all_job)
 
     # Weight: required skills count double — missing a required skill hurts more.
     covered = 0.0

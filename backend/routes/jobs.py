@@ -1,16 +1,15 @@
 import json
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
+from sqlalchemy import or_
 
 from database.connection import get_db
 from models.models import Job, Company, SavedJob, Application, User, Profile
 
-from schemas.schemas import JobResponse, JobListResponse, JobSearchRequest
+from schemas.schemas import JobResponse, JobListResponse
 from utils.auth import get_current_user, get_optional_user
-from services.matching_service import calculate_match_score, score_job, analyze_job_like
-from services.skill_normalizer import overlap_sets
+from services.matching_service import calculate_match_score
 from services.jsearch_service import get_job_details as jsearch_get_details
 from services.free_job_boards import get_free_board_job
 

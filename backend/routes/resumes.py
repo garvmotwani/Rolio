@@ -12,13 +12,12 @@ Security measures:
 import os
 import json
 import uuid
-import hashlib
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from config import UPLOAD_DIR, MAX_UPLOAD_SIZE_BYTES, ALLOWED_UPLOAD_EXTENSIONS
 from database.connection import get_db
-from models.models import User, Resume, Skill, Experience, Education, Project, Profile
+from models.models import User, Resume, Skill, Profile
 from utils.auth import get_current_user
 from services.resume_service import process_resume
 from utils.security_logging import log_upload_event

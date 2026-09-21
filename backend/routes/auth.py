@@ -20,7 +20,7 @@ from config import (
 )
 from database.connection import get_db
 from models.models import User, Profile
-from models.session import RefreshSession, hash_token
+from models.session import hash_token
 from models.password_reset import PasswordResetToken, hash_reset_token
 from models.email_verification import EmailVerificationToken, hash_verification_token
 from schemas.schemas import (

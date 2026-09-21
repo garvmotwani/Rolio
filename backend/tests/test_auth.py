@@ -1,7 +1,6 @@
 """
 Tests for authentication, authorization, CSRF, password policy, session management.
 """
-import pytest
 
 
 class TestLoginFlow:
@@ -199,7 +198,6 @@ class TestRefreshTokenRotation:
 
     def test_refresh_reuse_detection(self, test_client):
         """Using a revoked refresh token should revoke all sessions."""
-        from models.session import RefreshSession, hash_token
 
         test_client.post("/api/auth/register", json={
             "email": "reuse@example.com", "password": "password123", "name": "Reuse"

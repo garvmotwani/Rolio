@@ -11,18 +11,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from database.connection import Base
 from config import DATABASE_URL
 
-# Import all models so Alembic knows about them
-from models.models import (
-    User, Profile, Skill, Experience, Education, Project, Resume,
-    Company, Job, SavedJob, Application, Notification, SearchHistory,
-)
-from models.email_models import (
-    GmailToken, EmailMessage, EmailSyncLog, ApplicationEvent, ApplicationReminder,
-)
-from models.session import RefreshSession
-from models.oauth_state import OAuthState
-from models.password_reset import PasswordResetToken
-
+# Import all models so Alembic knows about them — these are side-effect
+# imports: they register tables on Base.metadata for create_all/autogenerate.
+import models.models  # noqa: F401
+import models.email_models  # noqa: F401
+import models.session  # noqa: F401
+import models.oauth_state  # noqa: F401
+import models.password_reset  # noqa: F401
+import models.email_verification  # noqa: F401
 # Alembic Config object
 config = context.config
 

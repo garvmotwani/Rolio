@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from main import app
-from database.connection import get_db, SessionLocal
+from database.connection import SessionLocal
 from models.models import User, Job, Company
 
 

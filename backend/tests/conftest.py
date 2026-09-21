@@ -8,7 +8,6 @@ Test isolation:
 """
 import os
 import sys
-import tempfile
 import pytest
 
 # Force test environment before importing the app
@@ -34,13 +33,13 @@ config.TOKEN_ENCRYPTION_KEY = ""
 config.REDIS_URL = "redis://127.0.0.1:1/0"
 
 from fastapi.testclient import TestClient
-from database.connection import engine, Base, SessionLocal
+from database.connection import engine, Base
 
 # Create all tables in the test database
 from models.models import *
-from models.session import RefreshSession
 from models.email_models import *
-from models.oauth_state import OAuthState
+from models.session import RefreshSession  # noqa: F401 — side-effect import: registers table
+from models.oauth_state import OAuthState  # noqa: F401 — side-effect import: registers table
 
 # Recreate the schema every session — create_all alone would keep a stale
 # test_rolio.db missing newly-added columns and fail confusingly.
