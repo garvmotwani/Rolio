@@ -3,7 +3,6 @@ Rate limiting utility with Redis backend (fallback to in-memory).
 """
 import time
 import logging
-from typing import Optional
 
 logger = logging.getLogger("rolio.rate_limiter")
 

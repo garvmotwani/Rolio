@@ -65,7 +65,6 @@ class TestTokenEncryption:
 
     def test_fernet_tampered_ciphertext_rejected(self):
         from routes.gmail import _decrypt_token
-        from cryptography.fernet import InvalidToken
         # Tamper with ciphertext
         with pytest.raises(Exception):
             _decrypt_token("dGFtcGVkX2RhdGFfaGVyZQ==")

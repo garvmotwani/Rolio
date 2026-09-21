@@ -12,14 +12,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from config import (
-    ENV_NAME, IS_PRODUCTION, FRONTEND_ORIGINS, BACKEND_PUBLIC_ORIGIN,
-    UPLOAD_DIR, MAX_UPLOAD_SIZE_BYTES, FORCE_HTTPS, TRUSTED_PROXIES,
+    ENV_NAME, IS_PRODUCTION, FRONTEND_ORIGINS, UPLOAD_DIR, MAX_UPLOAD_SIZE_BYTES, FORCE_HTTPS, TRUSTED_PROXIES,
 )
 from database.connection import engine, Base, get_db, get_redis
 from models.models import (
     User, Profile, Skill, Company, Job, SavedJob, Application, Notification,
 )
-from models.session import RefreshSession
 from routes import (
     auth, users, jobs, applications, recommendations, resumes, ai, gmail,
     ai_chat, resume_builder, jsearch, unified_search, kanban,
@@ -286,7 +284,6 @@ def get_dashboard(
         strong_matches = len([r for r in recs if r[1] >= 70])
 
         # Collect all company IDs needed
-        rec_job_ids = [job.id for job, _ in recs]
         rec_company_ids = set()
         for job, _ in recs:
             if job.company_id:

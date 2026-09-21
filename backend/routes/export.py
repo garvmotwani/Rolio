@@ -4,7 +4,7 @@ Export endpoints — CSV download for applications and saved jobs.
 
 import csv
 import io
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 

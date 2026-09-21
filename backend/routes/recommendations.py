@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from models.models import User, Profile, Job, Company, SavedJob, Application
+from models.models import User, Profile, Company, SavedJob, Application
 from utils.auth import get_current_user
-from services.matching_service import calculate_match_score, get_recommendations, analyze_match
+from services.matching_service import get_recommendations, analyze_match
 
 router = APIRouter(prefix="/api", tags=["recommendations"])
 
@@ -65,7 +65,6 @@ def get_user_recommendations(
         })
 
     # Explainable card fields (batch-computed after assembly)
-    from services.matching_service import analyze_match
     for item, (job, _score) in zip(results, recommendations):
         breakdown = analyze_match(profile, job, db, cached_skills=profile_skills)
         item["matched_skills"] = breakdown.get("matched_skills", [])[:4]

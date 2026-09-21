@@ -6,7 +6,6 @@ These tests never call the real RapidAPI — the service layer is mocked.
 """
 import os
 import sys
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 

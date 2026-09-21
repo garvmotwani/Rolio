@@ -1,7 +1,5 @@
 import os
-import json
 import re
-from config import UPLOAD_DIR
 
 # Resource-exhaustion guards: crafted documents with enormous page/paragraph
 # counts can burn the entire serverless time budget. These caps bound parsing

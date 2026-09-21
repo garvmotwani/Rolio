@@ -11,7 +11,6 @@ Token budget per use case:
   Improve text:  ~40 in + 60 out  = ~100 total
 """
 
-import os
 import time
 import asyncio
 import hashlib

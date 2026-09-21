@@ -2,8 +2,6 @@
 Streaming AI support — yields tokens as they arrive from Nemotron/Gemini.
 """
 
-import asyncio
-import hashlib
 import json
 import logging
 from typing import AsyncGenerator
@@ -12,8 +10,7 @@ import httpx
 
 from config import NEMOTRON_API_KEY, GEMINI_API_KEY, NEMOTRON_MODEL, GEMINI_MODEL
 from services.ai_provider import (
-    _truncate_prompt, _check_ai_rate_limit, _strip_thinking,
-    PROMPT_MAX_CHARS,
+    _truncate_prompt, _check_ai_rate_limit,
 )
 
 logger = logging.getLogger("rolio.ai.stream")

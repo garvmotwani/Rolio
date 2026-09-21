@@ -9,11 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
 
 from database.connection import get_db
 from models.models import User, Profile, Skill, Job, Company
-from utils.auth import get_current_user
 from utils.ai_rate_limit import ai_rate_limit
 
 logger = logging.getLogger("rolio.prep")

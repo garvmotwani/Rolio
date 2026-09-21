@@ -4,7 +4,7 @@ Application analytics routes — provides aggregated data for the analytics dash
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case, extract
+from sqlalchemy import func, case
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -28,7 +28,6 @@ def get_skill_gaps(
     estimates impact honestly by RE-SCORING each job as if the user had the
     skill (no invented numbers). Sorted by (importance, impact).
     """
-    from services.matching_service import MATCH_WEIGHTS
 
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     if not profile:
@@ -199,9 +198,9 @@ def get_dashboard_analytics(
     Get full analytics dashboard data for the current user.
     Returns: summary stats, status distribution, match score stats,
     applications over time, top skills, and recent activity.
-    """
-    since = datetime.utcnow() - timedelta(days=days)
 
+    Note: summary stats are lifetime by design; `days` scopes the trend chart.
+    """
     # ── Summary Stats ──
     total_applications = db.query(func.count(Application.id)).filter(
         Application.user_id == user.id
@@ -392,9 +391,7 @@ def get_activity_feed(
     """Everything new for this user since `since`: application events
     (status changes, email detections, applies), plus new strong matches.
     Ordered newest-first. `since` is clamped to 30 days back max."""
-    from models.email_models import ApplicationEvent, EmailMessage
-    from models.models import SavedJob
-    import json as _json
+    from models.email_models import ApplicationEvent
 
     cutoff = None
     if since:
@@ -472,7 +469,7 @@ def get_activity_feed(
                         "company_name": "",
                         "job_id": job.id,
                         "created_at": job.posted_at.isoformat(),
-                        "score": result.score,
+                        "score": score,
                     })
     except Exception:
         # Matching failure must never break the feed — events so far still return

@@ -8,13 +8,9 @@ not exact offers — actual pay varies by company tier, funding, and
 negotiation.
 """
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
 from typing import Optional
 
-from database.connection import get_db
-from models.models import User
-from utils.auth import get_current_user
 
 router = APIRouter(prefix="/api/salary", tags=["salary-analytics"])
 

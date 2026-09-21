@@ -102,7 +102,7 @@ def _fallback_advice(profile, question, profile_skills):
         if len(profile_skills) < 8: tips.append("Add more skills (aim 8-15)")
         if not profile.title: tips.append("Add professional title")
         if not profile.bio: tips.append("Write a bio")
-        return f"Profile tips:\n" + "\n".join(f"• {t}" for t in tips) if tips else "Profile looks good!"
+        return "Profile tips:\n" + "\n".join(f"• {t}" for t in tips) if tips else "Profile looks good!"
     return "Ask about skills, resume tips, interview prep, or application strategy."
 
 

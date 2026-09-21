@@ -1,11 +1,10 @@
-import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from models.models import User, Profile, Skill, Experience, Education, Project
 from schemas.schemas import ProfileUpdate, ProfileResponse, OnboardingData, SkillResponse, ExperienceResponse, EducationResponse, ProjectResponse
-from utils.auth import get_current_user, get_password_hash
+from utils.auth import get_current_user
 
 router = APIRouter(prefix="/api", tags=["users"])
 
@@ -167,7 +166,6 @@ def complete_onboarding(
 
 def calculate_completeness(profile, db):
     score = 0
-    total = 100
 
     # Skills (25 points)
     skills = db.query(Skill).filter(Skill.profile_id == profile.id).count()

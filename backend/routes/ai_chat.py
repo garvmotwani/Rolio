@@ -5,11 +5,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 from typing import List, Optional
-from datetime import datetime
 
 from database.connection import get_db
 from models.models import User, Profile, Skill, Application, Job, Company
-from utils.auth import get_current_user
 from utils.ai_rate_limit import ai_rate_limit
 from services.matching_service import get_match_breakdown
 
@@ -200,7 +198,7 @@ async def chat(
         common = ["Python", "JavaScript", "TypeScript", "React", "Node.js", "SQL", "AWS", "Docker"]
         missing = [s for s in common if s.lower() not in [ps.lower() for ps in profile_skills]]
         if missing:
-            return {"response": f"Consider adding:\n\n" + "\n".join(f"• **{s}**" for s in missing[:6]) + "\n\nVisit [Profile](/profile) to add them."}
+            return {"response": "Consider adding:\n\n" + "\n".join(f"• **{s}**" for s in missing[:6]) + "\n\nVisit [Profile](/profile) to add them."}
         return {"response": f"Your {len(profile_skills)} skills look solid!"}
 
     if any(w in msg for w in ["apply", "should i", "application"]):
