@@ -115,6 +115,7 @@ class TestGoogleSignInCallback:
 
         with patch("routes.google_auth.GOOGLE_CLIENT_ID", "test-client-id"), \
              patch("routes.google_auth.GOOGLE_CLIENT_SECRET", "test-secret"), \
+             patch("routes.google_auth.GOOGLE_SIGNIN_REDIRECT_URI", "https://frontend.example/api/auth/google/callback"), \
              patch("httpx.post") as mock_post, \
              patch("routes.google_auth.id_token.verify_oauth2_token", side_effect=fake_verify):
             mock_post.return_value = MagicMock(
@@ -122,12 +123,19 @@ class TestGoogleSignInCallback:
                 json=lambda: {"id_token": "fake-id-token", "access_token": "x"},
             )
             cookies = {"rolio_oauth_session": session} if session else {}
-            return test_client.get(
+            resp = test_client.get(
                 "/api/auth/google/callback",
                 params={"code": "auth-code-123", "state": state},
                 cookies=cookies,
                 follow_redirects=False,
             )
+        # Contract: the token exchange MUST reuse the exact redirect_uri from
+        # the authorize leg (GOOGLE_SIGNIN_REDIRECT_URI), byte-identical —
+        # Google rejects the exchange otherwise (RFC 6749 §4.1.3).
+        # (Rejection paths return before the exchange, so no call is made.)
+        if mock_post.called:
+            assert mock_post.call_args.kwargs["data"]["redirect_uri"] == "https://frontend.example/api/auth/google/callback"
+        return resp
 
     def test_successful_new_user_creation(self, test_client):
         state, session = self._start_flow(test_client)
