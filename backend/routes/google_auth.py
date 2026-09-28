@@ -31,7 +31,7 @@ from google.oauth2 import id_token
 from google.auth.transport.requests import Request as GoogleAuthRequest
 
 from config import (
-    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_PUBLIC_URL, BACKEND_PUBLIC_ORIGIN,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, APP_PUBLIC_URL,
     GOOGLE_SIGNIN_REDIRECT_URI,
 )
 from database.connection import get_db
@@ -185,7 +185,11 @@ def google_signin_callback(
     # ── 4. Exchange the code (server-side only) ────────────
     try:
         import httpx
-        redirect_uri = f"{_backend_origin(request)}/api/auth/google/callback"
+        # Must be byte-identical to the redirect_uri used in the authorize
+        # leg (RFC 6749 §4.1.3) — Google rejects the exchange otherwise. In
+        # proxy mode this is the FRONTEND origin's callback (set via
+        # GOOGLE_SIGNIN_REDIRECT_URI), not this backend's origin.
+        redirect_uri = GOOGLE_SIGNIN_REDIRECT_URI
         token_data = {
             "code": code,
             "client_id": GOOGLE_CLIENT_ID,
@@ -282,8 +286,3 @@ def google_signin_callback(
     )
 
     return redirect
-
-
-def _backend_origin(request: Request) -> str:
-    """Public origin of this backend (used as the OAuth redirect_uri)."""
-    return BACKEND_PUBLIC_ORIGIN
