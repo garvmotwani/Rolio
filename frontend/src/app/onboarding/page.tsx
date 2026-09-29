@@ -20,6 +20,16 @@ const steps = [
   { id: 10, title: 'Career goals', subtitle: 'A brief summary of what you want', icon: Rocket },
 ];
 
+const parseSkills = (text: string): string[] =>
+  Array.from(
+    new Set(
+      text
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+
 export default function OnboardingPage() {
   const { user, setAuth } = useAuthStore();
   const router = useRouter();
@@ -30,7 +40,7 @@ export default function OnboardingPage() {
     name: user?.name || '',
     education: [{ institution: '', degree: '', field_of_study: '', start_date: '', end_date: '', gpa: '' }],
     experience: [{ company: '', title: '', description: '', start_date: '', end_date: '', is_current: false }],
-    skills: [''],
+    skillsText: '',
     preferred_roles: '',
     preferred_locations: '',
     preferred_work_type: 'hybrid',
@@ -62,7 +72,7 @@ export default function OnboardingPage() {
         title: data.preferred_roles.split(',')[0]?.trim() || '',
         education: data.education.filter((e) => e.institution),
         experience: data.experience.filter((e) => e.company),
-        skills: data.skills.filter((s) => s.trim()).map((s) => ({ name: s.trim(), level: 'intermediate', category: 'technical' })),
+        skills: parseSkills(data.skillsText),
         preferred_roles: data.preferred_roles,
         preferred_locations: data.preferred_locations,
         preferred_work_type: data.preferred_work_type,
@@ -240,13 +250,13 @@ export default function OnboardingPage() {
                 <div className="space-y-3">
                   <p className="text-xs text-white/15">Enter skills one per line or separated by commas</p>
                   <textarea
-                    value={data.skills.join('\n')}
-                    onChange={(e) => updateData('skills', e.target.value.split('\n').flatMap((l) => l.split(',').map((s) => s.trim())).filter(Boolean))}
+                    value={data.skillsText}
+                    onChange={(e) => updateData('skillsText', e.target.value)}
                     rows={6}
                     placeholder="Python&#10;JavaScript&#10;React&#10;SQL&#10;FastAPI"
                   />
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {data.skills.filter(Boolean).map((s, i) => (
+                    {parseSkills(data.skillsText).map((s, i) => (
                       <span key={i} className="px-2.5 py-1 bg-white/[0.04] border border-white/[0.06] rounded-full text-xs text-white/50">{s}</span>
                     ))}
                   </div>
