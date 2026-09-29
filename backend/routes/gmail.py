@@ -528,11 +528,26 @@ def sync_emails(user: User = Depends(get_current_user), db: Session = Depends(ge
     db.refresh(sync_log)
 
     try:
-        query = "newer_than:30d (from: " + " OR from:".join(JOB_SENDER_DOMAINS[:10]) + ")"
-        query += " OR subject:(application interview offer position hiring)"
+        # Gmail search quirk: spaces inside subject:(a b c) are implicit AND,
+        # so the old subject:(application interview offer ...) clause required
+        # ALL keywords in one subject and matched nothing. Also, Gmail's search
+        # API gets unreliable beyond ~256 chars, so run short independent
+        # queries (subject keywords, then ATS sender domains) and merge ids.
+        SUBJECT_KEYWORDS = ("application", "interview", "offer", "position", "hiring")
+        # in:anywhere includes spam (job emails frequently land there); trash
+        # is still excluded so deleted emails are never resurrected.
+        BASE = "in:anywhere -in:trash newer_than:30d "
+        queries = [
+            BASE + " OR ".join(f"subject:{kw}" for kw in SUBJECT_KEYWORDS),
+            *(BASE + f"from:{domain}" for domain in JOB_SENDER_DOMAINS),
+        ]
 
-        results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
-        messages = results.get("messages", [])
+        fetched_ids: dict[str, str] = {}
+        for q in queries:
+            results = service.users().messages().list(userId="me", q=q, maxResults=50).execute()
+            for m in results.get("messages", []):
+                fetched_ids.setdefault(m["id"], m.get("threadId", ""))
+        messages = [{"id": mid, "threadId": tid} for mid, tid in fetched_ids.items()]
         sync_log.emails_fetched = len(messages)
 
         new_count = matched_count = 0
