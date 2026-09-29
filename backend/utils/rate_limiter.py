@@ -11,32 +11,40 @@ _memory_store: dict[str, list[float]] = {}
 
 
 class RateLimiter:
-    """Rate limiter using Redis with in-memory fallback."""
-    
+    """Rate limiter using Redis with in-memory fallback.
+
+    The fallback store is MODULE-LEVEL, shared by every instance: without
+    it, each get_rate_limiter() call started from an empty bucket and
+    limiting silently did nothing in Redis-less deployments.
+    """
+
     def __init__(self, redis=None):
         self.redis = redis
-        self._memory_store: dict[str, list[float]] = {}
+
+    def _store(self) -> dict[str, list[float]]:
+        return _memory_store
     
     def _get_key(self, prefix: str, identifier: str) -> str:
         return f"ratelimit:{prefix}:{identifier}"
     
     def _memory_check(self, key: str, limit: int, window_seconds: int) -> bool:
-        """Check rate limit using in-memory storage."""
+        """Check rate limit using the shared in-memory store."""
+        store = self._store()
         now = time.time()
         cutoff = now - window_seconds
         
         # Clean old entries
-        if key in self._memory_store:
-            self._memory_store[key] = [
-                ts for ts in self._memory_store[key] if ts > cutoff
+        if key in store:
+            store[key] = [
+                ts for ts in store[key] if ts > cutoff
             ]
         else:
-            self._memory_store[key] = []
+            store[key] = []
         
-        if len(self._memory_store[key]) >= limit:
+        if len(store[key]) >= limit:
             return False
         
-        self._memory_store[key].append(now)
+        store[key].append(now)
         return True
     
     def _redis_check(self, key: str, limit: int, window_seconds: int) -> bool:
@@ -106,20 +114,29 @@ class RateLimiter:
                 pass
         
         # Fallback to memory
-        if key in self._memory_store:
-            self._memory_store[key] = [
-                ts for ts in self._memory_store[key] if ts > cutoff
+        store = self._store()
+        if key in store:
+            store[key] = [
+                ts for ts in store[key] if ts > cutoff
             ]
-            return max(0, limit - len(self._memory_store[key]))
+            return max(0, limit - len(store[key]))
         return limit
 
 
+_limiter_singleton: RateLimiter | None = None
+
+
 def get_rate_limiter() -> RateLimiter:
-    """Get a rate limiter instance with Redis if available."""
+    """Get the shared rate limiter (singleton). Redis when available,
+    otherwise the module-level in-memory store shared across instances."""
+    global _limiter_singleton
+    if _limiter_singleton is not None:
+        return _limiter_singleton
     try:
         from database.connection import get_redis
         redis = get_redis()
-        return RateLimiter(redis=redis)
+        _limiter_singleton = RateLimiter(redis=redis)
     except Exception:
         logger.info("Redis not available, using in-memory rate limiter")
-        return RateLimiter(redis=None)
+        _limiter_singleton = RateLimiter(redis=None)
+    return _limiter_singleton
