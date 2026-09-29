@@ -65,11 +65,12 @@ function SettingsPage() {
       window.history.replaceState({}, '', '/settings');
     } else if (gmailParam === 'error') {
       const reason = searchParams.get('reason') || '';
+      const gerr = searchParams.get('gerr') || '';
       const messages: Record<string, string> = {
         missing_params: 'Google did not return the expected data. Please try again.',
         state: 'The sign-in attempt expired or was already used. Please try connecting again.',
-        token_exchange: 'Google rejected the authorization. Please try connecting again.',
-        gmail_api: 'Gmail access failed — the Gmail API may not be enabled for this app yet. Please try again in a few minutes.',
+        token_exchange: `Google rejected the authorization${gerr ? ` (${gerr})` : ''}. Please try connecting again.`,
+        gmail_api: `Gmail access failed${gerr ? ` (${gerr})` : ''} — the Gmail API may not be enabled for this app yet. Please try again in a few minutes.`,
       };
       setGmailError(messages[reason] || 'Could not connect Gmail. Please try again.');
       window.history.replaceState({}, '', '/settings');

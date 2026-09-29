@@ -20,9 +20,6 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
 from cryptography.fernet import Fernet, InvalidToken
 
 from config import (
@@ -152,6 +149,9 @@ def _cleanup_expired_states(db: Session):
 # ─── Gmail Service Builder ───────────────────────────────────
 def _get_gmail_service(user_id: int, db: Session):
     """Build a Gmail API service from stored (encrypted) tokens."""
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    """Build a Gmail API service from stored (encrypted) tokens."""
     token_record = db.query(GmailToken).filter(
         GmailToken.user_id == user_id,
         GmailToken.is_active == True,
@@ -180,7 +180,6 @@ def _get_gmail_service(user_id: int, db: Session):
 
     service = build("gmail", "v1", credentials=credentials)
     return service, credentials
-
 
 # ─── Email Parsing Helpers ───────────────────────────────────
 JOB_SENDER_DOMAINS = [
@@ -332,6 +331,7 @@ def get_auth_url(user: User = Depends(get_current_user), db: Session = Depends(g
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Google OAuth credentials not configured.")
 
+    from google_auth_oauthlib.flow import Flow
     flow = Flow.from_client_config(
         {"web": {
             "client_id": GOOGLE_CLIENT_ID,
@@ -347,9 +347,10 @@ def get_auth_url(user: User = Depends(get_current_user), db: Session = Depends(g
     _cleanup_expired_states(db)
     state = _create_oauth_state(db, user.id)
 
+    # No include_granted_scopes: requesting it makes Google return a granted-
+    # scope superset, which previously tripped strict exchange-side checks.
     auth_url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
         prompt="consent",
         state=state,
     )
@@ -375,58 +376,95 @@ async def gmail_callback(request: Request, db: Session = Depends(get_db)):
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error")
 
-    flow = Flow.from_client_config(
-        {"web": {
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }},
-        scopes=SCOPES,
-    )
-    flow.redirect_uri = GOOGLE_REDIRECT_URI
-
+    # Exchange the authorization code directly at Google's token endpoint.
+    # This mirrors google_auth.py's proven exchange and intentionally avoids
+    # requests-oauthlib's fetch_token(), whose strict requested-vs-granted
+    # scope comparison raises "Scope has changed" when Google returns a
+    # superset (e.g. after include_granted_scopes=true) — which previously
+    # surfaced as an opaque token_exchange failure.
     try:
-        flow.fetch_token(code=code)
+        import httpx
+        token_resp = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "grant_type": "authorization_code",
+            },
+            timeout=10.0,
+        )
     except Exception as e:
-        logger.error(f"Gmail OAuth token exchange failed: {type(e).__name__}")
+        logger.error("Gmail token exchange network error: %s", type(e).__name__)
         return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=token_exchange")
 
-    credentials = flow.credentials
+    if token_resp.status_code != 200:
+        try:
+            g_err = token_resp.json().get("error", "unknown")
+        except Exception:
+            g_err = f"HTTP {token_resp.status_code}"
+        logger.error("Gmail token exchange rejected: %s", g_err)
+        return RedirectResponse(
+            url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=token_exchange&gerr={g_err}"
+        )
 
-    # Get user email from Gmail. The most common failure here is the Gmail
-    # API not being enabled on the Google Cloud project (HttpError 403
-    # accessNotConfigured) — surface it to the user instead of a raw 500.
+    tokens = token_resp.json()
+    access_token_value = tokens.get("access_token", "")
+    refresh_token_value = tokens.get("refresh_token", "")
+    granted_scopes = tokens.get("scope", ",".join(SCOPES))
+    expires_in = tokens.get("expires_in", 3600)
+    if not access_token_value:
+        logger.error("Gmail token exchange returned no access_token")
+        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=token_exchange")
+
+    token_expiry = datetime.utcnow() + timedelta(seconds=int(expires_in))
+
+    # Get the user's Gmail address directly (first Gmail API call). The most
+    # common failure here is the Gmail API not being enabled on the Google
+    # Cloud project (403 accessNotConfigured) — surface it instead of a 500.
     try:
-        service = build("gmail", "v1", credentials=credentials)
-        profile = service.users().getProfile(userId="me").execute()
-        gmail_address = profile.get("emailAddress", "")
+        profile_resp = httpx.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+            headers={"Authorization": f"Bearer {access_token_value}"},
+            timeout=10.0,
+        )
+        if profile_resp.status_code != 200:
+            try:
+                g_err = profile_resp.json().get("error", {}).get("status", f"HTTP {profile_resp.status_code}")
+            except Exception:
+                g_err = f"HTTP {profile_resp.status_code}"
+            logger.error("Gmail profile fetch failed: %s", g_err)
+            return RedirectResponse(
+                url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=gmail_api&gerr={g_err}"
+            )
+        gmail_address = profile_resp.json().get("emailAddress", "")
     except Exception as e:
-        logger.error(f"Gmail API profile fetch failed: {type(e).__name__}")
+        logger.error("Gmail profile network error: %s", type(e).__name__)
         return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=gmail_api")
 
     # Store tokens encrypted — NEVER sent to browser, NEVER store client_secret in DB
     existing = db.query(GmailToken).filter(GmailToken.user_id == user_id).first()
     if existing:
-        existing.access_token = _encrypt_token(credentials.token)
-        existing.refresh_token = _encrypt_token(credentials.refresh_token) if credentials.refresh_token else existing.refresh_token
+        existing.access_token = _encrypt_token(access_token_value)
+        existing.refresh_token = _encrypt_token(refresh_token_value) if refresh_token_value else existing.refresh_token
         existing.client_id = GOOGLE_CLIENT_ID
         existing.client_secret = ""  # Explicitly clear — never store client_secret
         existing.gmail_address = gmail_address
+        existing.scopes = granted_scopes
         existing.is_active = True
-        if credentials.expiry:
-            existing.token_expiry = credentials.expiry
+        existing.token_expiry = token_expiry
     else:
         token = GmailToken(
             user_id=user_id,
-            access_token=_encrypt_token(credentials.token),
-            refresh_token=_encrypt_token(credentials.refresh_token or ""),
+            access_token=_encrypt_token(access_token_value),
+            refresh_token=_encrypt_token(refresh_token_value or ""),
             client_id=GOOGLE_CLIENT_ID,
             client_secret="",  # NEVER store client_secret
-            scopes=",".join(SCOPES),
+            scopes=granted_scopes,
             gmail_address=gmail_address,
             is_active=True,
-            token_expiry=credentials.expiry,
+            token_expiry=token_expiry,
         )
         db.add(token)
 
