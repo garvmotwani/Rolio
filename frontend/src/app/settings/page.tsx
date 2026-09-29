@@ -46,6 +46,7 @@ function SettingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [gmailError, setGmailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,10 +59,19 @@ function SettingsPage() {
   useEffect(() => {
     const gmailParam = searchParams.get('gmail');
     if (gmailParam === 'connected') {
+      setGmailError(null);
       loadGmailStatus();
       // Clean URL
       window.history.replaceState({}, '', '/settings');
     } else if (gmailParam === 'error') {
+      const reason = searchParams.get('reason') || '';
+      const messages: Record<string, string> = {
+        missing_params: 'Google did not return the expected data. Please try again.',
+        state: 'The sign-in attempt expired or was already used. Please try connecting again.',
+        token_exchange: 'Google rejected the authorization. Please try connecting again.',
+        gmail_api: 'Gmail access failed — the Gmail API may not be enabled for this app yet. Please try again in a few minutes.',
+      };
+      setGmailError(messages[reason] || 'Could not connect Gmail. Please try again.');
       window.history.replaceState({}, '', '/settings');
     }
   }, [searchParams]);
@@ -78,6 +88,7 @@ function SettingsPage() {
   };
 
   const handleConnect = async () => {
+    setGmailError(null);
     setConnecting(true);
     try {
       const data = await apiGet<{ auth_url: string }>('/api/gmail/auth-url');
@@ -181,6 +192,20 @@ function SettingsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Connection error banner */}
+              {gmailError && (
+                <div className="mx-6 mt-4 flex items-center justify-between gap-3 bg-red-500/[0.08] border border-red-500/20 rounded-xl px-4 py-3">
+                  <p className="text-xs text-red-300/90">{gmailError}</p>
+                  <button
+                    onClick={() => setGmailError(null)}
+                    className="text-red-300/50 hover:text-red-300 text-xs flex-shrink-0"
+                    aria-label="Dismiss"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
               {/* Connected state */}
               {gmailStatus?.connected && (

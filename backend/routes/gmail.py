@@ -364,13 +364,13 @@ async def gmail_callback(request: Request, db: Session = Depends(get_db)):
     state = request.query_params.get("state")
 
     if not code or not state:
-        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error")
+        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=missing_params")
 
     # Validate state from database — one-time-use, expiry check
     user_id = _validate_oauth_state(db, state)
     if user_id is None:
         logger.warning("Invalid, expired, or replayed OAuth state received")
-        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error")
+        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=state")
 
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error")
@@ -390,14 +390,20 @@ async def gmail_callback(request: Request, db: Session = Depends(get_db)):
         flow.fetch_token(code=code)
     except Exception as e:
         logger.error(f"Gmail OAuth token exchange failed: {type(e).__name__}")
-        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error")
+        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=token_exchange")
 
     credentials = flow.credentials
 
-    # Get user email from Gmail
-    service = build("gmail", "v1", credentials=credentials)
-    profile = service.users().getProfile(userId="me").execute()
-    gmail_address = profile.get("emailAddress", "")
+    # Get user email from Gmail. The most common failure here is the Gmail
+    # API not being enabled on the Google Cloud project (HttpError 403
+    # accessNotConfigured) — surface it to the user instead of a raw 500.
+    try:
+        service = build("gmail", "v1", credentials=credentials)
+        profile = service.users().getProfile(userId="me").execute()
+        gmail_address = profile.get("emailAddress", "")
+    except Exception as e:
+        logger.error(f"Gmail API profile fetch failed: {type(e).__name__}")
+        return RedirectResponse(url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=gmail_api")
 
     # Store tokens encrypted — NEVER sent to browser, NEVER store client_secret in DB
     existing = db.query(GmailToken).filter(GmailToken.user_id == user_id).first()
