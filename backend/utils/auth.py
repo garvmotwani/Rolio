@@ -125,12 +125,16 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         secure=secure,
         path="/api/auth/refresh",  # Only sent to refresh endpoint
     )
-    # CSRF token cookie — NOT HttpOnly (must be readable by JS to send in header)
+    # CSRF token cookie — NOT HttpOnly (must be readable by JS to send in header).
+    # Lifetime matches the REFRESH session, not the access token: the refresh
+    # endpoint itself requires CSRF double-submit, so a 30-minute CSRF cookie
+    # would expire while the 7-day session lives, making the next refresh fail
+    # with "CSRF token missing" after any idle period (chicken-and-egg).
     csrf_token = generate_csrf_token()
     response.set_cookie(
         key=CSRF_COOKIE,
         value=csrf_token,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         httponly=False,
         samesite=COOKIE_SAMESITE,
         secure=secure,
