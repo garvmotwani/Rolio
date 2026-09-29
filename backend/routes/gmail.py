@@ -26,6 +26,7 @@ from config import (
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
     APP_PUBLIC_URL, TOKEN_ENCRYPTION_KEY, TOKEN_ENCRYPTION_KEY_VALID, IS_PRODUCTION,
 )
+from urllib.parse import quote
 from database.connection import get_db
 from models.models import User, Application, Company, Job
 from models.email_models import GmailToken, EmailMessage, EmailSyncLog, ApplicationEvent
@@ -111,12 +112,22 @@ def _validate_oauth_state(db: Session, state_token: str) -> int | None:
     """
     Validate and consume an OAuth state atomically.
     Returns user_id or None if invalid/expired/reused.
+
+    Only consumes states belonging to the gmail connect flow (flow_type=
+    "gmail"): sign-in states carry different guarantees (session binding,
+    PKCE verifier) and must never be accepted here — and vice versa.
     """
     oauth_state = db.query(OAuthState).filter(
         OAuthState.state_token == state_token,
     ).first()
 
     if not oauth_state:
+        return None
+
+    # Cross-flow confusion guard: a state minted for sign-in (or any other
+    # flow) is not valid for the gmail connect callback.
+    if (oauth_state.flow_type or "gmail") != "gmail":
+        logger.warning("OAuth state flow mismatch: gmail callback got %s state", oauth_state.flow_type)
         return None
 
     # Already consumed — replay attack
@@ -402,7 +413,7 @@ async def gmail_callback(request: Request, db: Session = Depends(get_db)):
             g_err = f"HTTP {token_resp.status_code}"
         logger.error("Gmail token exchange rejected: %s", g_err)
         return RedirectResponse(
-            url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=token_exchange&gerr={g_err}"
+            url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=token_exchange&gerr={quote(str(g_err))}"
         )
 
     tokens = token_resp.json()
@@ -432,7 +443,7 @@ async def gmail_callback(request: Request, db: Session = Depends(get_db)):
                 g_err = f"HTTP {profile_resp.status_code}"
             logger.error("Gmail profile fetch failed: %s", g_err)
             return RedirectResponse(
-                url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=gmail_api&gerr={g_err}"
+                url=f"{APP_PUBLIC_URL}/settings?gmail=error&reason=gmail_api&gerr={quote(str(g_err))}"
             )
         gmail_address = profile_resp.json().get("emailAddress", "")
     except Exception as e:
@@ -518,6 +529,14 @@ def disconnect_gmail(
 
 @router.post("/sync")
 def sync_emails(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Per-user throttle FIRST (not per-IP: office/VPN users share IPs) —
+    # before any token decryption or Gmail API traffic. Each sync reads up
+    # to 50 remote messages, so unthrottled invocations would let a user
+    # hammer the Gmail API through our credentials.
+    from utils.rate_limiter import get_rate_limiter
+    if not get_rate_limiter().check("gmail_sync", user.id, 6, 300):
+        raise HTTPException(status_code=429, detail="Syncing too often. Try again in a few minutes.")
+
     service, credentials = _get_gmail_service(user.id, db)
     if not service:
         raise HTTPException(status_code=400, detail="Gmail not connected")
@@ -667,8 +686,17 @@ def auto_sync_if_stale(
     ).order_by(EmailSyncLog.started_at.desc()).first()
 
     if last_sync and last_sync.status == "running":
-        # Another sync (from any device/tab) is in flight — don't duplicate
-        return {"synced": False, "reason": "already_running"}
+        # Self-heal: a 'running' row older than 10 minutes is a crashed
+        # serverless invocation (Vercel kills long functions); without this,
+        # one crash would block auto-sync forever.
+        stale_minutes = (datetime.utcnow() - last_sync.started_at).total_seconds() / 60
+        if stale_minutes < 10:
+            # Another sync (from any device/tab) is genuinely in flight
+            return {"synced": False, "reason": "already_running"}
+        last_sync.status = "failed"
+        last_sync.error_message = "abandoned: invocation crashed or timed out"
+        db.commit()
+    last_sync = None  # proceed with sync
 
     if last_sync and last_sync.completed_at:
         age_min = (datetime.utcnow() - last_sync.completed_at).total_seconds() / 60

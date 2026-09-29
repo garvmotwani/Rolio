@@ -178,3 +178,79 @@ class TestClientSecretHygiene:
         from routes import gmail
         source = inspect.getsource(gmail.gmail_callback)
         assert 'client_secret = ""' in source
+
+
+class TestCrossFlowStateConfusion:
+    """A state minted for one OAuth flow must not validate in another."""
+
+    def test_signin_state_rejected_by_gmail_callback_validator(self):
+        from database.connection import SessionLocal
+        from models.oauth_state import OAuthState
+        from routes.gmail import _validate_oauth_state
+
+        db = SessionLocal()
+        try:
+            user = _make_user(db)
+            state = OAuthState(
+                user_id=user.id,
+                state_token="signin-flow-state-token-abc123",
+                created_at=datetime.utcnow(),
+                expires_at=datetime.utcnow() + timedelta(minutes=5),
+                flow_type="google_signin",
+            )
+            db.add(state)
+            db.commit()
+            # Must be rejected even though the token itself is fresh and valid
+            assert _validate_oauth_state(db, "signin-flow-state-token-abc123") is None
+            # And it must NOT have been consumed — it still belongs to its own flow
+            db.refresh(state)
+            assert state.is_consumed is False
+        finally:
+            db.close()
+
+    def test_gmail_state_still_validates_in_gmail_flow(self):
+        from routes.gmail import _create_oauth_state, _validate_oauth_state
+        from database.connection import SessionLocal
+
+        db = SessionLocal()
+        try:
+            user = _make_user(db)
+            state = _create_oauth_state(db, user.id)
+            assert _validate_oauth_state(db, state) == user.id
+        finally:
+            db.close()
+
+
+class TestSyncRateLimit:
+    """The manual sync endpoint is throttled per user, not per IP."""
+
+    def test_sync_blocked_after_burst(self):
+        from fastapi import HTTPException
+        from database.connection import SessionLocal
+        from utils.rate_limiter import get_rate_limiter
+        from routes import gmail
+
+        db = SessionLocal()
+        try:
+            user = _make_user(db)
+            # Deterministic: ensure a clean bucket, then exceed the 6/5min limit
+            limiter = get_rate_limiter()
+            for _ in range(6):
+                assert limiter.check("gmail_sync", user.id, 6, 300) is True
+            assert limiter.check("gmail_sync", user.id, 6, 300) is False
+
+            # Endpoint-level: the 7th call must 429 before touching Gmail
+            with pytest.raises(HTTPException) as excinfo:
+                gmail.sync_emails(user=user, db=db)
+            assert excinfo.value.status_code == 429
+        finally:
+            db.close()
+
+    def test_rate_check_runs_before_token_decryption(self):
+        """Source-level guard: throttle precedes any token/decrypt work."""
+        import inspect
+        from routes import gmail
+        src = inspect.getsource(gmail.sync_emails)
+        rate_pos = src.find('get_rate_limiter().check("gmail_sync"')
+        svc_pos = src.find("_get_gmail_service(")
+        assert 0 < rate_pos < svc_pos, "rate limit must run before service build"
