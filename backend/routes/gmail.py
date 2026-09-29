@@ -331,28 +331,24 @@ def get_auth_url(user: User = Depends(get_current_user), db: Session = Depends(g
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Google OAuth credentials not configured.")
 
-    from google_auth_oauthlib.flow import Flow
-    flow = Flow.from_client_config(
-        {"web": {
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }},
-        scopes=SCOPES,
-    )
-    flow.redirect_uri = GOOGLE_REDIRECT_URI
-
-    # Generate server-side state persisted in DB (also purge expired states)
+    # Hand-build the authorize URL (mirrors google_auth.py). Deliberately NO
+    # PKCE: google-auth-oauthlib's Flow auto-generates a code_challenge in the
+    # authorize leg whose verifier dies with the request, so reconstructing a
+    # Flow in the callback exchanges without it — Google then rejects the
+    # exchange with invalid_grant. PKCE protects public clients; this is a
+    # confidential server-side flow (client_secret never leaves the server).
     _cleanup_expired_states(db)
     state = _create_oauth_state(db, user.id)
 
-    # No include_granted_scopes: requesting it makes Google return a granted-
-    # scope superset, which previously tripped strict exchange-side checks.
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        state=state,
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/auth"
+        f"?client_id={GOOGLE_CLIENT_ID}"
+        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
+        "&response_type=code"
+        f"&scope={SCOPES[0]}"
+        "&access_type=offline"
+        "&prompt=consent"
+        f"&state={state}"
     )
 
     return {"auth_url": auth_url}
