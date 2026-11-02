@@ -1,14 +1,16 @@
-# Rolio API (FastAPI)
+# Rolio API
 
-Backend for the Rolio career platform. Deployed on **Vercel** as a Python
-serverless function (`api/index.py` boots the whole FastAPI app; `vercel.json`
-routes `/api/*` to it) with PostgreSQL on Neon.
+FastAPI backend for Rolio. It exposes all application endpoints under `/api/*` and is deployed as a Vercel Python function from the recognized `api/index.py` entrypoint.
 
-The frontend (also Vercel) proxies all `/api/*` requests here server-side, so
-the backend URL never needs to be public-facing and auth cookies stay
-first-party.
+## Local development
 
-- Health: `/api/health`
-- Migrations run automatically on cold start; schema is managed by Alembic.
-- Configuration: environment variables — see `DEPLOYMENT.md` in the repo root
-  for the full checklist.
+```bash
+cd backend
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn main:app --reload --port 8001
+```
+
+The backend intentionally does **not** create tables, seed data, or run Alembic migrations in production. Run `alembic upgrade head` as a deliberate release step against the target PostgreSQL database before deploying code that needs a new schema.
+
+See the root [README](../README.md) and [deployment guide](../DEPLOYMENT.md) for environment variables, Vercel routing, and verification steps.

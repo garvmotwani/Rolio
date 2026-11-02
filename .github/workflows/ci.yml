@@ -61,13 +61,15 @@ jobs:
           TOKEN_ENCRYPTION_KEY: ""
         run: |
           cd backend
-          python -m pytest tests/ -v --tb=short
+          alembic upgrade head
+          python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: actions/upload-artifact@v4
         with:
-          files: ./backend/coverage.xml
-          fail_ci_if_error: false
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: error
 
   # Frontend Build
   frontend-build:
@@ -79,7 +81,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 

@@ -223,10 +223,10 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.015] to-transparent pointer-events-none" />
         <div className="absolute inset-0 border-y border-white/[0.04] pointer-events-none" />
         <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 relative z-10">
-          <AnimatedStat value="20+" label="Job Listings" delay={0} />
-          <AnimatedStat value="12+" label="Companies" delay={0.1} />
-          <AnimatedStat value="15+" label="Skill Categories" delay={0.2} />
-          <AnimatedStat value="<1s" label="Match Speed" delay={0.3} />
+          <AnimatedStat value="Explainable" label="Match scores" delay={0} />
+          <AnimatedStat value="Private" label="Cookie auth" delay={0.1} />
+          <AnimatedStat value="Focused" label="Application tracking" delay={0.2} />
+          <AnimatedStat value="Built-in" label="Resume intelligence" delay={0.3} />
         </div>
       </ParallaxSection>
 
@@ -288,17 +288,11 @@ export default function LandingPage() {
       </ParallaxSection>
 
 
-      {/* ─── Marquee / Social Proof ─── */}
+      {/* ─── Technical foundations ─── */}
       <section className="py-12 border-y border-white/[0.03] overflow-hidden">
-        <div className="flex animate-marquee whitespace-nowrap">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="flex items-center gap-12 mx-12">
-              {['Google', 'Stripe', 'Notion', 'Vercel', 'Figma', 'Linear', 'Supabase', 'Railway', 'Cloudflare', 'Shopify'].map((name) => (
-                <span key={`${i}-${name}`} className="text-sm font-medium text-white/10 tracking-wider uppercase">
-                  {name}
-                </span>
-              ))}
-            </div>
+        <div className="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs font-medium text-white/25 tracking-[0.16em] uppercase">
+          {['Next.js + TypeScript', 'FastAPI + SQLAlchemy', 'PostgreSQL + Alembic', 'Secure cookie sessions', 'Explainable matching'].map((item) => (
+            <span key={item}>{item}</span>
           ))}
         </div>
       </section>
@@ -366,8 +360,8 @@ export default function LandingPage() {
             <div>
               <h4 className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-3">Legal</h4>
               <div className="space-y-2">
-                <span className="block text-sm text-white/20">Privacy Policy</span>
-                <span className="block text-sm text-white/20">Terms of Service</span>
+                <Link href="/privacy" className="block text-sm text-white/20 hover:text-white/50 transition-colors">Privacy Policy</Link>
+                <Link href="/terms" className="block text-sm text-white/20 hover:text-white/50 transition-colors">Terms of Service</Link>
               </div>
             </div>
           </div>

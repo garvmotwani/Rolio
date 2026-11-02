@@ -1,251 +1,148 @@
 # Rolio — AI-Powered Career Platform
 
-A full-stack AI career platform: discover relevant jobs, understand why they match, manage applications, and improve your chances of getting hired.
+Rolio is a full-stack portfolio project that turns a candidate profile or resume into explainable job matches, then helps them track applications in one place.
 
-> Add a dashboard or landing-page screenshot before publishing the repository;
-> the project intentionally ships without a broken placeholder image.
+> **Demo note:** add a real dashboard screenshot or short walkthrough GIF here before publishing. Do not use production credentials or sensitive resumes in the public demo.
 
-## Features
+## What it demonstrates
 
-- **Google sign-in** — one-click registration/login; profile details can be filled in later
-- **AI job matching** — match scores with per-factor breakdown (skills, experience, role, location, work type, salary) for every job
-- **Real-time job search** — live listings from Google for Jobs via the JSearch API, merged with a local job database
-- **Application tracking** — kanban board across pipeline stages, with status history and application events
-- **AI career assistant** — streaming chat with per-user quotas
-- **Cover letter generator** — AI-written, streaming token-by-token
-- **Interview prep** — AI-generated flashcards per job (behavioral, technical, system design)
-- **Resume parsing** — upload PDF/DOCX, extract skills/experience, build the matching profile
-- **Resume builder** — AI-assisted resume generation
-- **Gmail integration** — OAuth sync of job-related emails, auto-matched to applications with status updates
-- **Application analytics** — status distribution, weekly application trends, match-score buckets
-- **Search history & saved searches** — re-run past searches with one click
-- **CSV export** — applications and saved jobs
+- **Explainable matching** — weighted scores show how skills, experience, role, location, work type, and salary preferences affect a match.
+- **Career workflow** — job search, saved jobs, a Kanban application pipeline, analytics, CSV export, resume parsing, and profile building.
+- **Secure authentication** — HttpOnly cookie sessions, CSRF protection, rotating refresh tokens, server-side OAuth state, and rate limits.
+- **Optional integrations** — Google sign-in, Gmail application-email sync, JSearch listings, and OpenAI-compatible AI assistance.
 
 ## Architecture
 
-```
-┌─────────────────────┐         ┌──────────────────────────┐
-│  Next.js 14 (SPA)   │  HTTP   │  FastAPI backend         │
-│  - App Router       │──────►  │  - REST API (/api/*)     │
-│  - Zustand store    │ cookies │  - Cookie sessions       │
-│  - Framer Motion    │  + CSRF │  - Rate limiting         │
-│  - 3D (Three.js)    │         │  - Alembic migrations    │
-└─────────────────────┘         └────────┬─────────┬───────┘
-                                         │         │
-                              ┌──────────▼──┐  ┌───▼──────────────┐
-                              │ SQLite dev  │  │ External APIs     │
-                              │ Postgres/   │  │ - JSearch (paid)  │
-                              │ Supabase    │  │ - NVIDIA Nemotron │
-                              └─────────────┘  │ - Gmail OAuth     │
-                                               └──────────────────┘
+```text
+Browser
+  │ same-origin /api/* requests with first-party cookies
+  ▼
+Next.js 15 frontend (Vercel) ── rewrite ──► FastAPI backend (Vercel)
+                                                 │
+                                   PostgreSQL (production) / SQLite (local)
+                                                 │
+                                      Redis (optional rate-limit/cache store)
 ```
 
-**Monorepo layout**
+The browser talks to the frontend origin. Next.js proxies `/api/*` to the backend, keeping authentication cookies first-party on split-domain deployments.
 
-```
-backend/          FastAPI application
-  alembic/        Database migrations
-  models/         SQLAlchemy models
-  routes/         API endpoints (auth, jobs, ai, gmail, ...)
-  services/       Business logic (matching, JSearch, AI provider)
-  tests/          Pytest suite (76 tests)
-frontend/         Next.js 14 application
-  src/app/        Pages (App Router)
-  src/components/ UI components
-  src/lib/        API client, auth store
-```
+## Tech stack
 
-## Tech Stack
-
-| Layer | Technologies |
+| Layer | Technology |
 |---|---|
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS, Framer Motion, Three.js (react-three-fiber v9), Zustand |
-| Backend | Python 3.11+, FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 |
-| Auth | HttpOnly cookie sessions, JWT access + rotating refresh tokens, CSRF double-submit |
-| Database | SQLite (local dev) / PostgreSQL (Supabase ready) |
-| AI | NVIDIA Nemotron (OpenAI-compatible API) |
-| Job data | JSearch via RapidAPI + seeded local database |
+| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS, Framer Motion, Three.js, Zustand |
+| Backend | Python 3.11+, FastAPI, SQLAlchemy, Alembic, Pydantic |
+| Data | SQLite locally; PostgreSQL in production; optional Redis |
+| Auth | HttpOnly cookies, JWT access/refresh rotation, CSRF double-submit, OAuth |
+| AI / jobs | NVIDIA Nemotron-compatible API and JSearch (both optional) |
 
-## How It Works
+## Local setup
 
-**Authentication** — access + refresh JWTs are issued as HttpOnly cookies; JavaScript never sees a token. Refresh tokens rotate on every use, are persisted as hashes, and reuse of a revoked token kills all sessions. State-changing requests require a CSRF header (double-submit cookie, constant-time compare).
+Prerequisites: Python 3.11+, Node.js 20+, and npm. API keys are optional for local development.
 
-**Resume parsing** — upload a PDF/DOCX (validated by magic bytes, size-capped, stored outside static paths); text is extracted, skills/experience parsed into your profile, which drives matching.
+### Backend
 
-**Job matching** — every job is scored 0–100 from weighted factors (skills 30%, experience 20%, role 20%, location 10%, work type 10%, salary 10%). The dashboard explains each factor so you can see *why* a job matches.
-
-**AI integration** — the backend proxies an OpenAI-compatible endpoint (Nemotron). Prompts are size-capped and rate-limited per user; responses stream as NDJSON; structured outputs are validated before use. Without an API key, features return graceful fallbacks.
-
-**Gmail integration** — standard server-side OAuth: a cryptographically random one-time `state` is persisted in the DB (10-minute expiry), the callback validates and consumes it, tokens are stored Fernet-encrypted, and the browser is redirected to a clean URL with no token data. Synced emails are classified (interview / offer / rejection) and matched to applications.
-
-**Google sign-in** — same server-side OAuth infrastructure: the ID token is verified against Google's public keys (signature, audience, issuer, expiry), the state is session-bound to the initiating browser, and accounts are linked by verified email. New users get a password-less account and land on onboarding; existing users sign in with one click. Sessions are identical to password login (HttpOnly cookies + rotating refresh).
-
-**External job search** — JSearch requests are cached (in-memory; 24h in Redis when available), input-bounded, and rate-limited per-user (authenticated) or per-IP (anonymous, tight quota). Without an API key the app clearly reports external search as unavailable and falls back to local seeded jobs.
-
-## Local Setup
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- No API keys required to boot — the app runs fully without them.
-
-### 1. Backend
+macOS/Linux:
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-cp .env.example .env        # defaults work for local dev
-
-# Create the schema
+cp .env.example .env
 alembic upgrade head
-
-# (Optional) seed demo jobs so search has data without a JSearch key
-python seed.py              # see seed script section below
-
+python seed.py
 uvicorn main:app --reload --port 8001
 ```
 
-API docs: http://localhost:8001/docs
+Windows PowerShell:
 
-### 2. Frontend
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+alembic upgrade head
+python seed.py
+uvicorn main:app --reload --port 8001
+```
+
+### Frontend
+
+macOS/Linux:
 
 ```bash
 cd frontend
 npm install
-
-cp .env.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:8001
-
+cp .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000, click **Sign Up**, register, and complete onboarding.
+Windows PowerShell:
 
-### Demo credentials
+```powershell
+cd frontend
+npm install
+Copy-Item .env.example .env.local
+npm run dev
+```
 
-No pre-seeded user is required — registration is open in development. Create your own account at `/signup`; any password of 8+ characters works.
+Open `http://localhost:3000`, register an account, and complete onboarding. API documentation is available locally at `http://localhost:8001/docs`.
 
-## Environment Variables
+## Environment variables
 
-### Backend (`backend/.env`)
+The app starts locally without third-party API keys. Set the following for production:
 
-| Variable | Required | Notes |
-|---|---|---|
-| `ROLIO_ENV` | — | `development` (default) / `production` |
-| `ROLIO_SECRET_KEY` | prod | JWT signing. Generate: `openssl rand -base64 48` |
-| `CSRF_SECRET` | prod | Generate: `openssl rand -base64 32` |
-| `TOKEN_ENCRYPTION_KEY` | prod / Gmail | Fernet key. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `DATABASE_URL` | — | `sqlite:///./rolio.db` (default) or a PostgreSQL URL |
-| `FRONTEND_ORIGINS` | — | Comma-separated CORS origins |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Gmail / Google sign-in only | Google Cloud OAuth client — add **both** redirect URIs: `/api/gmail/callback` and `/api/auth/google/callback` |
-| `REDIS_URL` | — | Optional. Without it, rate limiting and search caching use an in-memory per-process fallback |
-| `NEMOTRON_API_KEY` | AI features only | NVIDIA build.nvidia.com key |
-| `JSEARCH_API_KEY` | Live job search only | RapidAPI key |
-
-In production mode the backend **refuses to start** if required secrets are missing or invalid.
-
-### Frontend (`frontend/.env.local`)
-
-| Variable | Required | Notes |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | — | Backend URL. Default: `http://localhost:8001` |
-
-## Optional Integrations
-
-The app boots and works with **zero** API keys:
-
-| Integration | Without a key |
+| Variable | Purpose |
 |---|---|
-| `JSEARCH_API_KEY` | Local seeded jobs still searchable; live search reports "unavailable" |
-| `NEMOTRON_API_KEY` | AI features return graceful fallback messages |
-| `GMAIL_*` + `TOKEN_ENCRYPTION_KEY` | Gmail sync section shows "not configured"; everything else works |
-| Google sign-in | "Continue with Google" buttons fall back to email/password registration only |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `ROLIO_ENV=production` | Enables production-only security behavior |
+| `ROLIO_SECRET_KEY` / `CSRF_SECRET` | Required strong secrets for session and CSRF protection |
+| `TOKEN_ENCRYPTION_KEY` | Fernet key required for encrypted Gmail tokens |
+| `FRONTEND_ORIGINS`, `APP_PUBLIC_URL`, `BACKEND_PUBLIC_ORIGIN` | Public deployment origins |
+| `BACKEND_ORIGIN` | Frontend-only server-side rewrite target |
+| `REDIS_URL` | Recommended for shared rate limiting and cache storage |
 
-## Tests & Checks
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the verified deployment process and integration-specific variables.
+
+## Verification
 
 ```bash
-# Backend (76 tests — auth, CSRF, sessions, uploads, JSearch protection,
-# OAuth state, token encryption, cross-user isolation)
+# Backend test suite
 cd backend && python -m pytest tests/ -q
 
-# Frontend
-cd frontend && npx tsc --noEmit     # typecheck
-cd frontend && npm run build        # production build
-
-# Migration sanity on a throwaway DB
+# Fresh migration sanity check
 cd backend && DATABASE_URL="sqlite:///./verify.db" alembic upgrade head
+
+# Frontend checks
+cd frontend && npm run lint
+cd frontend && npx tsc --noEmit
+cd frontend && npm run build
 ```
 
-## Database Migrations
+The CI workflow runs backend tests with coverage, frontend linting/type-checking/build, and Docker image builds on `main`.
 
-```bash
-cd backend
-alembic upgrade head          # apply all migrations
-alembic history               # view the migration chain
-alembic downgrade -1          # roll back the last migration
-```
+## Security notes
 
-The chain: `d555c3fbfe92` (initial schema) → `873760469030` (constraints/indexes) → `b05a93c793ce` (refresh sessions) → `0219e6bcb03a` (oauth states) → `7c2e9f1a4b5d` (search history).
+- Tokens are not returned in JSON, URLs, or localStorage; sessions use HttpOnly cookies.
+- State-changing requests require CSRF validation.
+- Refresh sessions rotate and reuse invalidates active sessions.
+- OAuth states are one-time, time-limited, and stored server-side.
+- Gmail tokens are Fernet-encrypted at rest.
+- Uploads are type- and size-validated and rate limits protect sensitive endpoints.
 
-## Security Notes
+## Known limitations
 
-- Tokens are never in JSON responses, localStorage, or URLs — HttpOnly cookies only
-- Refresh-token rotation with reuse detection; logout revokes server-side
-- CSRF double-submit on every state-changing endpoint (including refresh)
-- Fernet (authenticated) encryption for Gmail tokens at rest; client secret lives only in env config
-- One-time, expiring OAuth states persisted server-side
-- Upload validation by file signature (PDF/DOCX only), size-capped, stored outside static serving
-- Per-user/IP rate limits on auth, AI, uploads, and paid external search
-- Generic auth errors (no account enumeration); no stack traces in production responses
+- This is a portfolio demo, not a production recruitment service.
+- Use PostgreSQL and Redis for a multi-instance deployment; SQLite and in-memory limiting are local-development fallbacks.
+- Vercel function filesystems are ephemeral. Resume uploads need object storage or another persistent volume for a real production deployment.
+- AI, live job search, Gmail, and Google sign-in need their respective credentials and setup.
 
-## Known Limitations
+## Resume summary
 
-- **SQLite for local development** — fine for the demo; use PostgreSQL for anything real (Supabase works as-is via `DATABASE_URL`).
-- **In-memory rate limiting & search cache** — Redis is used when available (`REDIS_URL`), but the fallback is per-process. For multi-worker production, run Redis.
-- **External APIs need keys** — AI and live job search require your own NVIDIA/RapidAPI keys; free tiers are sufficient for a demo.
-- **Gmail needs Google Cloud setup** — create an OAuth client and add `http://localhost:8001/api/gmail/callback` as a redirect URI; test users must be added while the app is unverified.
-- **Dev-mode encryption key** — if `TOKEN_ENCRYPTION_KEY` is empty in development, an ephemeral key is used and Gmail tokens don't survive restarts (set a real key to avoid this).
-- **AI fallback behavior** — without an AI key, generated content is template-based rather than AI-written.
-- **External job listings** — JSearch returns whatever currency/location the source listing publishes; local seeded jobs and salary benchmarks are India/INR.
-- **Single-region demo** — a real production deployment would add HTTPS termination, Redis, monitoring, and backups (see checklist below).
-
-## Deployment Checklist
-
-For deploying beyond a demo:
-
-1. **Database** — provision PostgreSQL (Supabase works); set `DATABASE_URL`; run `alembic upgrade head` before first boot (the app does **not** auto-create schema in production).
-2. **Secrets** — set `ROLIO_ENV=production`, `ROLIO_SECRET_KEY`, `CSRF_SECRET`, `TOKEN_ENCRYPTION_KEY` (all validated at startup; the app refuses to boot with missing/weak values). Never commit `.env`.
-3. **CORS / origins** — set `FRONTEND_ORIGINS` to your frontend URL(s), `BACKEND_PUBLIC_ORIGIN` to the API URL, `APP_PUBLIC_URL` to the frontend URL (used for OAuth redirects).
-4. **HTTPS** — terminate TLS at your proxy/host; production cookies get `Secure` automatically when `ROLIO_ENV=production`. Set `FORCE_HTTPS=true` (auto-on in production) to 308-redirect any plain-HTTP request, and `TRUSTED_PROXIES=<proxy IPs|*>` so only your proxy can set `X-Forwarded-*` (both frontend and backend enforce this; the frontend reads `FORCE_HTTPS` at runtime).
-5. **Google OAuth** — add `https://<your-api-host>/api/gmail/callback` and `https://<your-api-host>/api/auth/google/callback` as authorized redirect URIs.
-6. **Frontend** — set `NEXT_PUBLIC_API_URL` at build time (`npm run build`), deploy `.next/` (standalone output is configured).
-7. **Redis** (optional but recommended) — set `REDIS_URL` for cross-process rate limiting and 24h search caching.
-8. **Uploads** — set `UPLOAD_DIR` to a persistent volume if not containerized ephemeral storage.
-9. **Monitoring** — `/api/health` reports DB + Redis status; wire it to your uptime checker.
-
-## Docker (Optional)
-
-`docker-compose.yml` is included as a **local** Postgres + Redis + backend + frontend stack. It intentionally runs in development mode over HTTP; use HTTPS and set `ROLIO_ENV=production` only in a real deployment:
-
-```bash
-cp .env.docker.example .env   # fill in secrets
-docker-compose up -d
-```
-
-**Dependency security:** both stacks are audit-clean. Verify with:
-```bash
-pip-audit -r backend/requirements.txt --no-deps   # Python
-cd frontend && npm audit --omit=dev               # npm
-```
-
-## Technical Highlights
-
-Full-stack AI career platform (Next.js 14, TypeScript, FastAPI, SQLAlchemy) featuring cookie-based JWT auth with rotating refresh sessions and CSRF protection, resume parsing with weighted job-matching, streaming AI assistance, Gmail OAuth with Fernet-encrypted tokens and replay-resistant server-side state, rate-limited external job search integration, Alembic-managed schema, and a 76-test security-focused pytest suite.
-
-> Resume wording: *"Built a full-stack AI career platform using Next.js, TypeScript, FastAPI, SQLAlchemy, cookie-based authentication, resume parsing, job matching, application tracking, Gmail OAuth, AI career assistance, and real-time job search."*
+> Built Rolio, an AI-powered career platform using Next.js, TypeScript, FastAPI, SQLAlchemy, and PostgreSQL. Implemented explainable job matching, application tracking, resume parsing, and secure cookie-based authentication with CSRF protection, rotating refresh sessions, and OAuth integrations.
 
 ## License
 
-MIT
+[MIT](LICENSE)

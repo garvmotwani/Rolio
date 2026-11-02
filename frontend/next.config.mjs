@@ -36,6 +36,11 @@ const BACKEND_ORIGIN = (
 ).trim();
 
 const nextConfig = {
+  // ESLint runs as a dedicated CI step. Next 15's legacy build-time lint
+  // invocation is incompatible with this project's ESLint 8 FlatCompat setup.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Required by the production Docker image, which runs the standalone server.
   output: 'standalone',
   images: {

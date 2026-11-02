@@ -1,10 +1,10 @@
 """
 Vercel serverless entrypoint.
 
-Vercel's Python runtime detects the FastAPI ASGI app in `app` and serves it
-per-request (no uvicorn needed). Routing note: incoming paths keep their
-ORIGINAL path in the ASGI scope, so /api/health still hits /api/health even
-though vercel.json rewrites everything into this function.
+Vercel's FastAPI runtime detects the ASGI app exported as `app` from this
+recognized `api/index.py` entrypoint and serves every request through it (no
+uvicorn or legacy vercel.json rewrites needed). Incoming paths are preserved,
+so /api/health reaches the matching FastAPI route.
 
 The backend package root (the parent of api/) must be importable, hence the
 sys.path insert — main.py, routes/, services/ etc. live there.

@@ -1,150 +1,97 @@
 # Deploying Rolio
 
-Rolio is a two-service app: a **Next.js frontend** and a **FastAPI backend**,
-plus managed **PostgreSQL** and **Redis**. This guide uses free tiers end to end.
+Rolio is deployed as two Vercel projects plus a managed PostgreSQL database. Redis is optional but recommended for shared rate limiting and external-job caching.
 
-## Architecture
-
-```
-Browser ──> Frontend (Vercel)  ──/api/* proxy──>  Backend (Vercel fn)  ──>  Postgres (Neon)
-                                                                   ──>  Redis (Upstash)
+```text
+Browser → Vercel frontend → same-origin /api/* rewrite → Vercel FastAPI function
+                                                        → PostgreSQL
+                                                        → Redis (optional)
 ```
 
-The frontend **proxies all `/api/*` requests to the backend** (Next.js rewrites).
-The browser only ever talks to the frontend origin, so auth cookies are
-first-party — this sidesteps third-party cookie blocking entirely. Do not point
-the frontend directly at the backend origin.
+## 1. Provision PostgreSQL
 
-## Recommended free-tier stack
+Create a Neon, Supabase, or other managed PostgreSQL database and keep its connection string as `DATABASE_URL`. Use a pooled connection URL if your provider recommends one.
 
-| Component | Service | Free tier |
-|---|---|---|
-| Frontend | [Vercel](https://vercel.com) | Hobby plan |
-| Backend | [Vercel](https://vercel.com) | Hobby plan (Python serverless function) |
-| PostgreSQL | [Neon](https://neon.tech) or Supabase | Free Postgres |
-| Redis | [Upstash](https://upstash.com) | Free tier (optional) |
+Before the first production deployment, run migrations from a trusted machine or release environment:
 
-> **Why the backend is also on Vercel:** Render's free tier now requires a
-> card in some regions and HF Spaces paywalled Docker containers (July 2026).
-> The whole backend ships as one Python serverless function (`api/index.py`
-> boots the FastAPI app; `vercel.json` routes `/api/*` to it) — no card, and
-> cold starts double as migration runs. Vercel Hobby allows 100GB-hrs/month,
-> plenty for a portfolio demo.
-
-## Step 1 — Database (Neon/Supabase)
-
-1. Create a project, copy the connection string.
-2. Convert to the SQLAlchemy driver form:
-   `postgresql+psycopg2://user:pass@host/db` (or `postgresql://` — both work).
-3. Note it as `DATABASE_URL`.
-
-> **Using Neon? Skip their CLI onboarding** (`neon login`, `neon skills`,
-> `neon.ts`, `neon deploy`). Those steps configure Neon's platform extras —
-> Neon Auth and storage buckets — which Rolio does not use: the app has its
-> own cookie sessions and Google sign-in, and only needs plain Postgres.
-> Just open Dashboard → **Connect** on the right branch and copy the
-> **pooled** connection string (hostname contains `-pooler`) as `DATABASE_URL`.
-
-## Step 2 — Backend (Vercel)
-
-1. Vercel dashboard → **Add New… → Project** → import `garvmotwani/Rolio` again.
-2. On the configure screen:
-   - **Project name:** `rolio-api`
-   - **Root Directory:** click `Edit` → select `backend`
-   - Framework preset: **Other** — the `vercel.json` inside `backend/` handles the rest
-3. Open **Environment Variables** and add the backend variables from the
-   checklist below (`ROLIO_ENV`, `DATABASE_URL`, secrets, etc.).
-4. Click **Deploy**. Migrations run automatically on the first request.
-   - For demo data, seed once from your machine with `DATABASE_URL` pointed
-     at the production database: `python -c "from seed import seed_database; seed_database()"`
-
-## Step 3 — Frontend (Vercel)
-
-1. Go to [vercel.com](https://vercel.com) → **Sign up with GitHub** (Hobby plan is free, no credit card).
-2. Dashboard → **Add New… → Project** → find `garvmotwani/Rolio` → **Import**.
-3. On the configure screen:
-   - **Root Directory:** click `Edit` → select `frontend` (the repo root is the monorepo, Vercel must build only the frontend folder).
-   - Framework preset auto-detects **Next.js** — leave everything else at defaults (build command `next build`, output auto).
-4. Open **Environment Variables** and add exactly one:
-   - Name: `BACKEND_ORIGIN`
-   - Value: your backend URL **with** `https://`, **no** trailing slash — e.g. `https://rolio-api.vercel.app` or `https://rolio-api-<team>.vercel.app`
-   - Environments: check Production, Preview, and Development.
-   - Do **NOT** set `NEXT_PUBLIC_API_URL` — leaving it unset activates the same-origin proxy that makes auth cookies work.
-5. Click **Deploy**. First build takes ~2–3 minutes; you'll get a `*.vercel.app` URL.
-6. Every push to `main` auto-deploys; pull requests get preview URLs automatically.
-
-> Deploying before the backend is live is fine — the build succeeds either way.
-> The site will only fully work once `BACKEND_ORIGIN` points at a running
-> backend. If you set it later, just trigger a redeploy (Deployments → ⋯ →
-> Redeploy) so the rewrite picks it up.
-
-## Step 4 — Google OAuth redirect URIs
-
-In Google Cloud Console → Credentials → your OAuth client → **Authorized
-redirect URIs**, add (replace with your real domains):
-
-```
-https://<frontend-domain>/api/auth/google/callback
-https://<frontend-domain>/api/gmail/callback
+```bash
+cd backend
+DATABASE_URL='postgresql+psycopg2://USER:PASSWORD@HOST/DATABASE' alembic upgrade head
 ```
 
-Because the frontend proxies `/api/*`, Google callbacks land on the frontend
-origin and are proxied to the backend — keeping every cookie first-party.
-(In the all-Vercel setup, `BACKEND_ORIGIN` is the backend project's URL and
-both projects proxy `/api/*` through it.)
+PowerShell:
 
-Then set on the backend:
+```powershell
+cd backend
+$env:DATABASE_URL = 'postgresql+psycopg2://USER:PASSWORD@HOST/DATABASE'
+alembic upgrade head
+```
 
-- `GOOGLE_SIGNIN_REDIRECT_URI=https://<frontend-domain>/api/auth/google/callback`
-- `GOOGLE_REDIRECT_URI=https://<frontend-domain>/api/gmail/callback`
+Run this deliberately for every schema release. The production application deliberately skips `create_all`, seeding, and automatic migrations; serverless cold starts are not a safe migration runner.
 
-## Environment variable checklist
+## 2. Deploy the backend
 
-### Backend (Vercel → project `rolio-api`)
+Create a Vercel project with `backend` as its Root Directory. Vercel automatically detects the FastAPI application exported from `api/index.py`; no legacy `vercel.json` rewrite or build configuration is required. FastAPI receives the original `/api/*` paths and routes them normally.
+
+Set these production variables:
 
 | Variable | Required | Notes |
-|---|---|---|
-| `ROLIO_ENV` | ✅ | `production` — enables fail-fast secret validation, disables `/docs`, skips auto-seed |
-| `DATABASE_URL` | ✅ | Postgres connection string |
-| `REDIS_URL` | recommended | e.g. `rediss://default:...@upstash.io:6379` (note `rediss://` for TLS) |
-| `ROLIO_SECRET_KEY` | ✅ | `openssl rand -base64 48` — **new value, never reuse dev** |
-| `CSRF_SECRET` | ✅ | `openssl rand -base64 32` |
-| `TOKEN_ENCRYPTION_KEY` | ✅ (for Gmail) | Fernet key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `APP_PUBLIC_URL` | ✅ | `https://<frontend-domain>` — used in password-reset / verification links and OAuth redirects |
-| `BACKEND_PUBLIC_ORIGIN` | ✅ | `https://<backend-domain>` |
-| `FRONTEND_ORIGINS` | ✅ | `https://<frontend-domain>` (comma-separated) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional | Google sign-in + Gmail sync |
-| `GOOGLE_SIGNIN_REDIRECT_URI` | with Google | `https://<frontend-domain>/api/auth/google/callback` |
-| `GOOGLE_REDIRECT_URI` | with Google | `https://<frontend-domain>/api/gmail/callback` |
-| `NEMOTRON_API_KEY` | optional | AI features degrade gracefully without it |
-| `JSEARCH_API_KEY` | optional | External job search; local seeded jobs always work |
-| `RESEND_API_KEY` / `EMAIL_FROM` | optional | Password-reset/verification emails |
-| `FORCE_HTTPS` | auto | Defaults on in production |
-| `TRUSTED_PROXIES` | ✅ | `*` on Vercel (app is only reachable via their proxy) |
-| `MAX_UPLOAD_SIZE_MB` | optional | Default 10 |
+|---|---:|---|
+| `ROLIO_ENV` | yes | `production` |
+| `DATABASE_URL` | yes | Managed PostgreSQL URL |
+| `ROLIO_SECRET_KEY` | yes | New strong random value |
+| `CSRF_SECRET` | yes | New strong random value |
+| `TOKEN_ENCRYPTION_KEY` | yes | Valid Fernet key for encrypted Gmail tokens |
+| `APP_PUBLIC_URL` | yes | Frontend HTTPS origin |
+| `BACKEND_PUBLIC_ORIGIN` | yes | Backend HTTPS origin |
+| `FRONTEND_ORIGINS` | yes | Frontend HTTPS origin, comma-separated if needed |
+| `TRUSTED_PROXIES` | yes | `*` when traffic is only behind Vercel |
+| `REDIS_URL` | recommended | Upstash `rediss://` URL |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | optional | Google sign-in / Gmail integration |
+| `NEMOTRON_API_KEY`, `JSEARCH_API_KEY` | optional | AI and live job listings |
+| `RESEND_API_KEY`, `EMAIL_FROM` | optional | Email verification and reset messages |
 
-### Frontend (Vercel → project `rolio`)
+The function returns generic production errors and logs detailed failures only in Vercel logs. Do not configure secrets in frontend environment variables.
 
-| Variable | Required | Notes |
-|---|---|---|
-| `BACKEND_ORIGIN` | ✅ | Backend URL, used by the server-side `/api/*` rewrite |
-| `NEXT_PUBLIC_API_URL` | leave unset | Empty = same-origin proxy (recommended) |
+## 3. Deploy the frontend
 
-## Post-deploy verification
+Create another Vercel project with `frontend` as its Root Directory. Set one server-side environment variable:
 
-1. `curl https://<backend-domain>/api/health` → `{"status":"ok",...}` (first
-   call may take ~10s — that's the cold start running migrations)
-2. `curl https://<frontend-domain>/api/health` → same JSON. This proves the
-   frontend → backend proxy rewrite works (the browser never needs the backend URL).
-3. Open the app, register an account — cookies should be set on the frontend
-   domain (DevTools → Application → Cookies).
-4. Log out / log back in; refresh the page while signed in (session survives).
-5. Google sign-in and Gmail connect (if configured) complete without
-   `?...=error` redirects.
-6. Password-reset email links open the correct frontend domain.
+| Variable | Value |
+|---|---|
+| `BACKEND_ORIGIN` | Backend Vercel URL, including `https://`, without a trailing slash |
 
-## Updating
+Leave `NEXT_PUBLIC_API_URL` unset in production. The configured rewrite keeps browser requests and authentication cookies on the frontend domain.
 
-Push to `main` — both Vercel projects auto-deploy (each only rebuilds when
-its root directory changes). Backend schema changes apply via automatic
-migrations on the next cold start.
+After setting or changing `BACKEND_ORIGIN`, redeploy the frontend so Next.js rebuilds its rewrite configuration.
+
+## 4. Configure OAuth only when needed
+
+In Google Cloud, add these authorized redirect URIs using the **frontend** domain:
+
+```text
+https://YOUR-FRONTEND/api/auth/google/callback
+https://YOUR-FRONTEND/api/gmail/callback
+```
+
+Set the equivalent backend variables:
+
+```text
+GOOGLE_SIGNIN_REDIRECT_URI=https://YOUR-FRONTEND/api/auth/google/callback
+GOOGLE_REDIRECT_URI=https://YOUR-FRONTEND/api/gmail/callback
+```
+
+## 5. Verify after deployment
+
+1. Visit `https://YOUR-BACKEND/api/health` and confirm the database is healthy.
+2. Visit `https://YOUR-FRONTEND/api/health` and confirm the frontend rewrite reaches the backend.
+3. Register a test account, refresh while signed in, then log out and back in.
+4. Confirm browser cookies are set on the frontend domain and are `Secure` in production.
+5. If enabled, test Google sign-in, Gmail connection, password reset, and email verification using the frontend callback URLs.
+
+## Operational notes
+
+- Vercel’s filesystem is ephemeral. Store production resume uploads in object storage rather than local disk.
+- Configure Redis for multi-instance rate limiting and caching.
+- Keep regular PostgreSQL backups and monitor `/api/health`.
+- Never commit `.env` files, database files, uploaded resumes, API keys, OAuth secrets, or production dumps.
